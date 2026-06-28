@@ -225,7 +225,7 @@ function AdminDashboard({ onLogout }) {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {media.map((m) => (
-                <div key={m.id} className="relative group rounded-lg overflow-hidden bg-white shadow-sm border border-gray-100">
+                <div key={m.id} className="relative rounded-lg overflow-hidden bg-white shadow-sm border border-gray-100">
                   <div className="aspect-square relative overflow-hidden bg-gray-100">
                     {m.type === 'video' ? (
                       <video src={m.public_url} className="w-full h-full object-cover" preload="metadata" muted />
@@ -240,7 +240,7 @@ function AdminDashboard({ onLogout }) {
                     </span>
                     <button
                       onClick={() => deleteMedia(m)}
-                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center shadow-md"
                       title="Supprimer"
                     >
                       ×
