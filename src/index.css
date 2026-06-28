@@ -1,0 +1,29 @@
+/* Styles globaux Galerie Mariage */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fond global crème chaud */
+body {
+  background-color: #FDFAF6;
+  color: #2C2C2C;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar discrète sur les navigateurs compatibles */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FDFAF6;
+}
+::-webkit-scrollbar-thumb {
+  background: #C9A84C55;
+  border-radius: 3px;
+}
+
+/* Supprime le tap highlight sur mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}

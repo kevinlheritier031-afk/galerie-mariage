@@ -1,0 +1,13 @@
+{
+  "name": "disk-api",
+  "version": "1.0.0",
+  "description": "API Express pour surveiller l'espace disque du VPS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
