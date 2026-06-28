@@ -1,7 +1,3 @@
-// Galerie publique principale — route /
-// Grille responsive 1/2/3 colonnes selon la taille d'écran
-// Mode sélection : appui long mobile ou bouton Sélectionner desktop
-// Realtime Supabase : les nouveaux uploads apparaissent instantanément
 import { useState, useCallback } from 'react'
 import MediaCard from './MediaCard.jsx'
 import Lightbox from './Lightbox.jsx'
@@ -11,44 +7,46 @@ import DownloadCodeModal from './DownloadCodeModal.jsx'
 import { useMedia } from '../hooks/useMedia.js'
 import { useSettings } from '../hooks/useSettings.js'
 
+const TABS = [
+  { key: 'all', label: 'Tout' },
+  { key: 'photo', label: 'Photos' },
+  { key: 'video', label: 'Vidéos' },
+]
+
 export default function Gallery() {
   const { media, loading, error } = useMedia()
   const { downloadMode } = useSettings()
+  const [activeTab, setActiveTab] = useState('all')
 
-  // État du lightbox
   const [lightboxIndex, setLightboxIndex] = useState(null)
 
-  // État du mode sélection
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
 
-  // Modales
   const [showUpload, setShowUpload] = useState(false)
   const [showCodeModal, setShowCodeModal] = useState(false)
 
-  // Médias sélectionnés sous forme de tableau (pour le ZIP)
+  const photoCount = media.filter((m) => m.type === 'photo').length
+  const videoCount = media.filter((m) => m.type === 'video').length
+
+  const filteredMedia =
+    activeTab === 'all' ? media : media.filter((m) => m.type === activeTab)
+
   const selectedMedia = media.filter((m) => selectedIds.has(m.id))
 
-  // Active le mode sélection (depuis appui long mobile)
-  const activateSelectionMode = useCallback(() => {
-    setSelectionMode(true)
-  }, [])
+  const activateSelectionMode = useCallback(() => setSelectionMode(true), [])
 
-  // Coche ou décoche un média
   function toggleSelect(m) {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (next.has(m.id)) {
-        next.delete(m.id)
-      } else {
-        next.add(m.id)
-      }
+      if (next.has(m.id)) next.delete(m.id)
+      else next.add(m.id)
       return next
     })
   }
 
   function selectAll() {
-    setSelectedIds(new Set(media.map((m) => m.id)))
+    setSelectedIds(new Set(filteredMedia.map((m) => m.id)))
   }
 
   function deselectAll() {
@@ -60,74 +58,99 @@ export default function Gallery() {
     setSelectedIds(new Set())
   }
 
+  function switchTab(key) {
+    setActiveTab(key)
+    exitSelectionMode()
+  }
+
   return (
     <div className="min-h-screen" style={{ background: '#FDFAF6' }}>
       {/* ─── Header ─── */}
       <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-gold/20 px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <h1
-            className="text-2xl font-bold"
-            style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}
-          >
-            Notre Mariage 💍
-          </h1>
+        <div className="max-w-5xl mx-auto">
+          {/* Ligne titre + actions */}
+          <div className="flex items-center justify-between">
+            <h1
+              className="text-2xl font-bold"
+              style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}
+            >
+              Notre Mariage 💍
+            </h1>
 
-          {/* Compteur de médias + bouton sélection desktop */}
-          <div className="flex items-center gap-3">
-            {!selectionMode && media.length > 0 && (
-              <>
-                <span className="text-sm hidden sm:block" style={{ color: '#8A7F72' }}>
-                  {media.length} souvenir{media.length > 1 ? 's' : ''}
-                </span>
-                <button
-                  onClick={() => setSelectionMode(true)}
-                  className="hidden sm:block text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors"
-                  style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-                >
-                  Sélectionner
-                </button>
-              </>
-            )}
+            <div className="flex items-center gap-3">
+              {!selectionMode && media.length > 0 && (
+                <>
+                  <span className="text-sm hidden sm:block" style={{ color: '#8A7F72' }}>
+                    {media.length} souvenir{media.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={() => setSelectionMode(true)}
+                    className="hidden sm:block text-sm px-3 py-1.5 rounded-lg border font-medium"
+                    style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
+                  >
+                    Sélectionner
+                  </button>
+                </>
+              )}
 
-            {/* Barre de contrôle sélection */}
-            {selectionMode && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="font-medium" style={{ color: '#2C2C2C' }}>
-                  {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
-                </span>
-                <button
-                  onClick={selectAll}
-                  className="text-xs underline"
-                  style={{ color: '#C9A84C' }}
-                >
-                  Tout
-                </button>
-                <button
-                  onClick={deselectAll}
-                  className="text-xs underline"
-                  style={{ color: '#8A7F72' }}
-                >
-                  Aucun
-                </button>
-                <button
-                  onClick={exitSelectionMode}
-                  className="text-xs px-2 py-1 rounded border"
-                  style={{ borderColor: '#8A7F72', color: '#8A7F72' }}
-                >
-                  Annuler
-                </button>
-              </div>
-            )}
+              {selectionMode && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium" style={{ color: '#2C2C2C' }}>
+                    {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+                  </span>
+                  <button onClick={selectAll} className="text-xs underline" style={{ color: '#C9A84C' }}>
+                    Tout
+                  </button>
+                  <button onClick={deselectAll} className="text-xs underline" style={{ color: '#8A7F72' }}>
+                    Aucun
+                  </button>
+                  <button
+                    onClick={exitSelectionMode}
+                    className="text-xs px-2 py-1 rounded border"
+                    style={{ borderColor: '#8A7F72', color: '#8A7F72' }}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Onglets Tout / Photos / Vidéos */}
+          {!loading && media.length > 0 && (
+            <div className="flex gap-2 mt-3">
+              {TABS.map((tab) => {
+                const count =
+                  tab.key === 'all' ? media.length
+                  : tab.key === 'photo' ? photoCount
+                  : videoCount
+                const active = activeTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => switchTab(tab.key)}
+                    className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+                    style={{
+                      background: active ? '#C9A84C' : '#C9A84C18',
+                      color: active ? '#fff' : '#8A7F72',
+                    }}
+                  >
+                    {tab.label}{' '}
+                    <span className="opacity-70 text-xs">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       </header>
 
       {/* ─── Contenu principal ─── */}
-      <main className="max-w-5xl mx-auto px-3 py-4 pb-32">
-        {/* État de chargement */}
+      <main className="max-w-5xl mx-auto px-2 py-3 pb-32">
+        {/* Chargement */}
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="rounded-card bg-gray-200 animate-pulse aspect-square" />
             ))}
           </div>
@@ -154,20 +177,33 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Grille responsive */}
-        {!loading && media.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {media.map((m, index) => (
-              <MediaCard
-                key={m.id}
-                media={m}
-                isSelectionMode={selectionMode}
-                isSelected={selectedIds.has(m.id)}
-                onSelect={toggleSelect}
-                onOpenLightbox={() => setLightboxIndex(index)}
-                onActivateSelectionMode={activateSelectionMode}
-              />
-            ))}
+        {/* Onglet vide mais galerie non vide */}
+        {!loading && media.length > 0 && filteredMedia.length === 0 && (
+          <div className="text-center py-16">
+            <p className="text-4xl mb-3">{activeTab === 'photo' ? '📷' : '🎥'}</p>
+            <p className="text-sm" style={{ color: '#8A7F72' }}>
+              Aucune {activeTab === 'photo' ? 'photo' : 'vidéo'} pour l'instant.
+            </p>
+          </div>
+        )}
+
+        {/* Grille 2 cols mobile / 3 tablette / 4 desktop */}
+        {!loading && filteredMedia.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {filteredMedia.map((m) => {
+              const originalIndex = media.findIndex((item) => item.id === m.id)
+              return (
+                <MediaCard
+                  key={m.id}
+                  media={m}
+                  isSelectionMode={selectionMode}
+                  isSelected={selectedIds.has(m.id)}
+                  onSelect={toggleSelect}
+                  onOpenLightbox={() => setLightboxIndex(originalIndex)}
+                  onActivateSelectionMode={activateSelectionMode}
+                />
+              )
+            })}
           </div>
         )}
       </main>
@@ -177,17 +213,13 @@ export default function Gallery() {
         <button
           onClick={() => setShowUpload(true)}
           className="fixed bottom-6 right-4 z-30 flex items-center gap-2 px-4 rounded-full shadow-lg font-semibold text-white transition-transform hover:scale-105 active:scale-95"
-          style={{
-            background: '#C9A84C',
-            minHeight: '56px',
-            fontSize: '15px',
-          }}
+          style={{ background: '#C9A84C', minHeight: '56px', fontSize: '15px' }}
         >
           📷 Ajouter
         </button>
       )}
 
-      {/* ─── Lightbox ─── */}
+      {/* ─── Lightbox (navigue dans tous les médias) ─── */}
       {lightboxIndex !== null && (
         <Lightbox
           media={media}
