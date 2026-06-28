@@ -8,7 +8,7 @@ import { validatePhoto, validateVideo } from '../lib/mediaValidation.js'
 
 export default function UploadModal({ onClose }) {
   const [tab, setTab] = useState('photo') // 'photo' | 'video'
-  const [pseudo, setPseudo] = useState('')
+  const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null) // URL objet pour la prévisualisation
   const [uploading, setUploading] = useState(false)
@@ -111,10 +111,8 @@ export default function UploadModal({ onClose }) {
       // Réinitialise le formulaire après succès
       setTimeout(() => {
         clearPreview()
-        setPseudo('')
         setSuccessMsg('')
         setProgress(0)
-        // Reset les inputs file
         if (photoInputRef.current) photoInputRef.current.value = ''
         if (videoInputRef.current) videoInputRef.current.value = ''
       }, 2500)
@@ -172,7 +170,10 @@ export default function UploadModal({ onClose }) {
           <input
             type="text"
             value={pseudo}
-            onChange={(e) => setPseudo(e.target.value)}
+            onChange={(e) => {
+              setPseudo(e.target.value)
+              localStorage.setItem('wedding_pseudo', e.target.value)
+            }}
             placeholder="Votre prénom (optionnel)"
             maxLength={50}
             className="w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-gold transition-colors"
