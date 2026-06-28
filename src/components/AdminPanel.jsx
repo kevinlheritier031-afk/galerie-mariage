@@ -156,11 +156,12 @@ function AdminDashboard({ onLogout }) {
 
   async function deleteMedia(m) {
     if (!window.confirm(`Supprimer ce média de ${m.pseudo} ?`)) return
-    await fetch('/api/admin/delete-media', {
+    const res = await fetch('/api/admin/delete-media', {
       method: 'DELETE',
       headers: authHeaders(),
       body: JSON.stringify({ id: m.id, storage_path: m.storage_path }),
     })
+    if (res.ok) setMedia((prev) => prev.filter((item) => item.id !== m.id))
   }
 
   async function saveDownloadMode() {
