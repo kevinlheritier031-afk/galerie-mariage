@@ -1,10 +1,7 @@
-// Hook de chargement et synchronisation en temps réel des médias
-// Charge tous les médias triés par created_at DESC au montage
-// Ecoute les événements Realtime Supabase :
-//   INSERT → ajoute le nouveau média en tête de liste (apparaît instantanément)
-//   DELETE → retire le média supprimé de la liste
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+
+const POLL_INTERVAL = 8000 // ms
 
 export function useMedia() {
   const [media, setMedia] = useState([])
@@ -12,8 +9,7 @@ export function useMedia() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    // Chargement initial de tous les médias
-    async function fetchMedia() {
+    async function fetchAll() {
       const { data, error: fetchError } = await supabase
         .from('media')
         .select('*')
@@ -27,32 +23,26 @@ export function useMedia() {
       setLoading(false)
     }
 
-    fetchMedia()
+    fetchAll()
 
-    // Abonnement Realtime pour recevoir les nouvelles insertions et suppressions
-    // Cela permet à tous les invités de voir les uploads en direct
+    // Polling toutes les 8 secondes — fiable même sans WebSocket
+    const interval = setInterval(fetchAll, POLL_INTERVAL)
+
+    // Realtime en bonus si le WebSocket passe (proxy Vercel → VPS)
     const channel = supabase
       .channel('media-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'media' },
-        (payload) => {
-          // Ajoute le nouveau média en tête de liste sans rechargement
-          setMedia((prev) => [payload.new, ...prev])
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'media' },
-        (payload) => {
-          // Retire le média supprimé de la liste
-          setMedia((prev) => prev.filter((m) => m.id !== payload.old.id))
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'media' }, (payload) => {
+        setMedia((prev) =>
+          prev.some((m) => m.id === payload.new.id) ? prev : [payload.new, ...prev]
+        )
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'media' }, (payload) => {
+        setMedia((prev) => prev.filter((m) => m.id !== payload.old.id))
+      })
       .subscribe()
 
-    // Nettoyage : désabonnement quand le composant est démonté
     return () => {
+      clearInterval(interval)
       supabase.removeChannel(channel)
     }
   }, [])
