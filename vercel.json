@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/supabase-proxy/:path*",
+      "destination": "http://141.94.121.159:8000/:path*"
+    }
+  ]
+}
