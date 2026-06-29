@@ -1,46 +1,42 @@
-// Hook de lecture et synchronisation en temps réel des paramètres globaux
-// Lit download_mode depuis la table settings au montage
-// Ecoute les UPDATE Realtime : quand l'admin change le mode depuis le panel,
-// tous les clients reçoivent le nouveau mode instantanément
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 
+const DEFAULT_TITLE = 'Notre Mariage 💍'
+
 export function useSettings() {
   const [downloadMode, setDownloadMode] = useState('open')
+  const [appTitle, setAppTitle] = useState(DEFAULT_TITLE)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Lecture initiale du mode de téléchargement
     async function fetchSettings() {
       const { data } = await supabase
         .from('settings')
-        .select('value')
-        .eq('key', 'download_mode')
-        .single()
+        .select('key, value')
+        .in('key', ['download_mode', 'app_title'])
 
-      if (data) setDownloadMode(data.value)
+      if (data) {
+        data.forEach(({ key, value }) => {
+          if (key === 'download_mode') setDownloadMode(value)
+          if (key === 'app_title') setAppTitle(value)
+        })
+      }
       setLoading(false)
     }
 
     fetchSettings()
 
-    // Abonnement aux changements de la table settings en temps réel
+    // Realtime : mise à jour instantanée chez tous les clients
     const channel = supabase
       .channel('settings-changes')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'settings', filter: 'key=eq.download_mode' },
-        (payload) => {
-          // Met à jour le mode chez tous les clients sans refresh
-          setDownloadMode(payload.new.value)
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, (payload) => {
+        if (payload.new?.key === 'download_mode') setDownloadMode(payload.new.value)
+        if (payload.new?.key === 'app_title') setAppTitle(payload.new.value)
+      })
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => supabase.removeChannel(channel)
   }, [])
 
-  return { downloadMode, loading }
+  return { downloadMode, appTitle, loading }
 }

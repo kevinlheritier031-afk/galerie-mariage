@@ -1,10 +1,12 @@
 // Barre fixe en bas d'écran qui apparaît dès qu'un média est sélectionné
 // Animation slide-up à l'apparition, slide-down à la disparition
 // Gère les trois modes de téléchargement : open, protected, disabled
-import { downloadAsZip } from '../lib/downloadHelpers.js'
+import { useState } from 'react'
+import { downloadMedia } from '../lib/downloadHelpers.js'
 
 export default function SelectionBar({ selectedMedia, downloadMode, onRequestCode, onClear }) {
   const count = selectedMedia.length
+  const [status, setStatus] = useState('idle') // 'idle' | 'loading' | 'done' | 'error'
 
   async function handleDownload() {
     if (downloadMode === 'disabled') {
@@ -13,15 +15,18 @@ export default function SelectionBar({ selectedMedia, downloadMode, onRequestCod
     }
 
     if (downloadMode === 'protected') {
-      // Ouvre la modale de code secret avant de lancer le ZIP
       onRequestCode()
       return
     }
 
-    // Mode open : téléchargement immédiat sans code
+    setStatus('loading')
     try {
-      await downloadAsZip(selectedMedia)
+      await downloadMedia(selectedMedia)
+      setStatus('done')
+      setTimeout(() => setStatus('idle'), 2500)
     } catch (err) {
+      setStatus('error')
+      setTimeout(() => setStatus('idle'), 3000)
       alert(`Erreur lors du téléchargement : ${err.message}`)
     }
   }
@@ -50,15 +55,17 @@ export default function SelectionBar({ selectedMedia, downloadMode, onRequestCod
         {/* Bouton télécharger */}
         <button
           onClick={handleDownload}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+          disabled={status === 'loading'}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all active:scale-95 disabled:opacity-60"
           style={{
-            background: '#C9A84C',
+            background: status === 'done' ? '#16a34a' : status === 'error' ? '#dc2626' : '#C9A84C',
             color: '#fff',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#A8873C')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#C9A84C')}
         >
-          💾 Télécharger ma sélection
+          {status === 'loading' && '⏳ Préparation…'}
+          {status === 'done' && '✓ Téléchargement lancé !'}
+          {status === 'error' && '✗ Erreur'}
+          {status === 'idle' && '💾 Télécharger ma sélection'}
         </button>
       </div>
     </div>

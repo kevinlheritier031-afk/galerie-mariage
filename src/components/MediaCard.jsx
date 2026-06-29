@@ -57,6 +57,7 @@ export default function MediaCard({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchMove={handleTouchEnd}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {/* Miniature du média */}
       <div className="aspect-square relative overflow-hidden bg-gray-100">

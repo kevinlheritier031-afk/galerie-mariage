@@ -2,11 +2,19 @@
 // Photos : navigation gauche/droite avec flèches et touches clavier
 // Vidéos : lecteur HTML5 natif centré
 // Fermeture par clic sur l'overlay, bouton ✕ ou touche Escape
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import VideoPlayer from './VideoPlayer.jsx'
 
-export default function Lightbox({ media, currentIndex, onClose, onPrev, onNext }) {
+export default function Lightbox({ media, currentIndex, onClose, onPrev, onNext, downloadMode, onDownload }) {
   const current = media[currentIndex]
+  const [downloadDone, setDownloadDone] = useState(false)
+
+  function handleDownloadClick(e) {
+    e.stopPropagation()
+    onDownload(current)
+    setDownloadDone(true)
+    setTimeout(() => setDownloadDone(false), 2500)
+  }
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < media.length - 1
 
@@ -39,14 +47,26 @@ export default function Lightbox({ media, currentIndex, onClose, onPrev, onNext 
       style={{ background: 'rgba(0,0,0,0.85)' }}
       onClick={onClose}
     >
-      {/* Bouton fermer */}
-      <button
-        className="absolute top-4 right-4 text-white text-3xl font-light w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors z-10"
-        onClick={onClose}
-        aria-label="Fermer"
-      >
-        ✕
-      </button>
+      {/* Barre haute : télécharger + fermer */}
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+        {downloadMode !== 'disabled' && onDownload && (
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-white transition-all active:scale-95"
+            style={{ background: downloadDone ? 'rgba(34,197,94,0.9)' : 'rgba(201,168,76,0.85)' }}
+            onClick={handleDownloadClick}
+            aria-label="Télécharger"
+          >
+            {downloadDone ? '✓ Lancé !' : '💾 Télécharger'}
+          </button>
+        )}
+        <button
+          className="text-white text-3xl font-light w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          ✕
+        </button>
+      </div>
 
       {/* Flèche gauche */}
       {hasPrev && (

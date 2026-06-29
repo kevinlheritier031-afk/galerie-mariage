@@ -43,6 +43,17 @@ function getImageExtension(url) {
 }
 
 /**
+ * Point d'entrée principal : 1 fichier = téléchargement direct, 2+ = ZIP
+ * Même comportement que Google Photos, iCloud, Dropbox
+ */
+export async function downloadMedia(mediaList, onProgress) {
+  if (mediaList.length === 1) {
+    return downloadSingle(mediaList[0])
+  }
+  return downloadAsZip(mediaList, onProgress)
+}
+
+/**
  * Télécharge les médias sélectionnés et les emballe dans un ZIP
  * Puis déclenche le téléchargement via un lien <a> temporaire
  *
@@ -57,8 +68,9 @@ export async function downloadAsZip(mediaList, onProgress) {
   for (let i = 0; i < mediaList.length; i++) {
     const media = mediaList[i]
 
-    // Télécharge le fichier depuis l'URL publique Supabase Storage
-    const response = await fetch(media.public_url)
+    // Télécharge le fichier via le proxy pour avoir le bon MIME type
+    const proxyUrl = `/api/download?url=${encodeURIComponent(media.public_url)}&filename=${encodeURIComponent(buildFileName(media, new Set()))}`
+    const response = await fetch(proxyUrl)
     if (!response.ok) {
       throw new Error(`Impossible de télécharger : ${media.public_url}`)
     }
@@ -77,14 +89,29 @@ export async function downloadAsZip(mediaList, onProgress) {
   const zipBlob = await zip.generateAsync({ type: 'blob' })
   const downloadUrl = URL.createObjectURL(zipBlob)
 
-  // Crée un lien temporaire invisible, clique dessus, puis le supprime
+  // window.open plutôt que link.click() pour éviter la navigation de la page courante sur mobile
+  const zipName = `galerie-mariage-${new Date().toISOString().slice(0, 10)}.zip`
   const link = document.createElement('a')
   link.href = downloadUrl
-  link.download = `galerie-mariage-${new Date().toISOString().slice(0, 10)}.zip`
+  link.download = zipName
+  link.target = '_blank'
+  link.rel = 'noopener noreferrer'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
 
   // Libère la mémoire après 60 secondes
   setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000)
+}
+
+/**
+ * Télécharge un seul média via le proxy serveur.
+ * window.location.href déclenche le téléchargement dans l'onglet courant :
+ * Chrome détecte Content-Disposition: attachment et télécharge sans naviguer,
+ * sans ouvrir de nouvel onglet Chrome qui afficherait un lien content://.
+ */
+export function downloadSingle(media) {
+  const fileName = buildFileName(media, new Set())
+  const proxyUrl = `/api/download?url=${encodeURIComponent(media.public_url)}&filename=${encodeURIComponent(fileName)}`
+  window.location.href = proxyUrl
 }

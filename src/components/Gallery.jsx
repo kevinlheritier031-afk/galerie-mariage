@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import * as tus from 'tus-js-client'
 import MediaCard from './MediaCard.jsx'
 import Lightbox from './Lightbox.jsx'
 import UploadModal from './UploadModal.jsx'
@@ -6,6 +7,8 @@ import SelectionBar from './SelectionBar.jsx'
 import DownloadCodeModal from './DownloadCodeModal.jsx'
 import { useMedia } from '../hooks/useMedia.js'
 import { useSettings } from '../hooks/useSettings.js'
+import { supabase } from '../lib/supabase.js'
+import { downloadSingle } from '../lib/downloadHelpers.js'
 
 const TABS = [
   { key: 'all', label: 'Tout' },
@@ -15,7 +18,12 @@ const TABS = [
 
 export default function Gallery() {
   const { media, loading, error } = useMedia()
-  const { downloadMode } = useSettings()
+  const { downloadMode, appTitle } = useSettings()
+
+  // Met à jour le titre de l'onglet navigateur en temps réel
+  useEffect(() => {
+    document.title = appTitle
+  }, [appTitle])
   const [activeTab, setActiveTab] = useState('all')
 
   const [lightboxIndex, setLightboxIndex] = useState(null)
@@ -24,7 +32,99 @@ export default function Gallery() {
   const [selectedIds, setSelectedIds] = useState(new Set())
 
   const [showUpload, setShowUpload] = useState(false)
-  const [showCodeModal, setShowCodeModal] = useState(false)
+  // codeModalTarget = tableau de médias à télécharger après saisie du code
+  // null = modal fermée, [media, ...] = modal ouverte pour cette liste
+  const [codeModalTarget, setCodeModalTarget] = useState(null)
+
+  // Upload en arrière-plan : persiste même si la modal est fermée
+  const [uploadJob, setUploadJob] = useState({ active: false, progress: 0, speed: 0, done: false, error: null })
+  const tusUploadRef = useRef(null)
+
+  // Bloque la fermeture de page pendant un upload actif
+  useEffect(() => {
+    if (!uploadJob.active) return
+    const handler = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [uploadJob.active])
+
+  // Téléchargement depuis le lightbox (un seul média)
+  async function handleLightboxDownload(media) {
+    if (downloadMode === 'disabled') return
+    if (downloadMode === 'protected') {
+      setCodeModalTarget([media])
+      return
+    }
+    try {
+      await downloadSingle(media)
+    } catch (err) {
+      alert(`Erreur de téléchargement : ${err.message}`)
+    }
+  }
+
+  async function startUpload(fileObj, pseudo, type) {
+    setShowUpload(false)
+    setUploadJob({ active: true, progress: 0, speed: 0, done: false, error: null })
+
+    try {
+      const ext = fileObj.raw.name.split('.').pop() || (type === 'video' ? 'mp4' : 'jpg')
+      const fileName = `${crypto.randomUUID()}.${ext}`
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+      const contentType = fileObj.raw.type || (type === 'video' ? 'video/mp4' : 'image/jpeg')
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/wedding-media/${fileName}`)
+        xhr.setRequestHeader('apikey', supabaseKey)
+        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
+        xhr.setRequestHeader('Content-Type', contentType)
+        xhr.setRequestHeader('x-upsert', 'false')
+        xhr.setRequestHeader('cache-control', 'max-age=3600')
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const now = Date.now()
+            const pct = Math.round((e.loaded / e.total) * 95)
+            setUploadJob((prev) => {
+              const elapsed = (now - (prev._lastTime || now)) / 1000
+              const speedMBs = elapsed > 0.5
+                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
+                : (prev.speed || 0)
+              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now }
+            })
+          }
+        }
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
+        }
+        xhr.onerror = () => reject(new Error('Erreur réseau.'))
+        xhr.send(fileObj.raw)
+      })
+
+      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
+
+      const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
+      if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
+
+      const { error: dbError } = await supabase.from('media').insert({
+        pseudo: pseudo.trim() || 'Invité anonyme',
+        storage_path: fileName,
+        public_url: urlData.publicUrl,
+        type,
+        duration_seconds: fileObj.duration || null,
+      })
+
+      if (dbError) throw dbError
+
+      setUploadJob({ active: false, progress: 100, done: true, error: null })
+      setTimeout(() => setUploadJob({ active: false, progress: 0, done: false, error: null }), 3000)
+    } catch (err) {
+      setUploadJob({ active: false, progress: 0, done: false, error: err.message || 'Une erreur est survenue.' })
+    }
+  }
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
@@ -74,7 +174,7 @@ export default function Gallery() {
               className="text-2xl font-bold"
               style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}
             >
-              Notre Mariage 💍
+              {appTitle}
             </h1>
 
             <div className="flex items-center gap-3">
@@ -85,7 +185,7 @@ export default function Gallery() {
                   </span>
                   <button
                     onClick={() => setSelectionMode(true)}
-                    className="hidden sm:block text-sm px-3 py-1.5 rounded-lg border font-medium"
+                    className="text-sm px-3 py-1.5 rounded-lg border font-medium"
                     style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
                   >
                     Sélectionner
@@ -227,25 +327,77 @@ export default function Gallery() {
           onClose={() => setLightboxIndex(null)}
           onPrev={() => setLightboxIndex((i) => Math.max(0, i - 1))}
           onNext={() => setLightboxIndex((i) => Math.min(media.length - 1, i + 1))}
+          downloadMode={downloadMode}
+          onDownload={handleLightboxDownload}
         />
       )}
 
       {/* ─── Modal upload ─── */}
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
+      {showUpload && (
+        <UploadModal
+          onClose={() => setShowUpload(false)}
+          onStartUpload={startUpload}
+        />
+      )}
+
+      {/* ─── Toast upload arrière-plan ─── */}
+      {(uploadJob.active || uploadJob.done || uploadJob.error) && (
+        <div
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-white rounded-xl shadow-xl px-4 py-3 w-72 border"
+          style={{ borderColor: '#C9A84C40' }}
+        >
+          {uploadJob.active && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
+                  ⬆️ Envoi en cours… {uploadJob.progress}%
+                </p>
+                {uploadJob.speed > 0 && (
+                  <p className="text-xs" style={{ color: '#8A7F72' }}>
+                    {uploadJob.speed < 1
+                      ? `${(uploadJob.speed * 1024).toFixed(0)} Ko/s`
+                      : `${uploadJob.speed.toFixed(1)} Mo/s`}
+                  </p>
+                )}
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-1.5 rounded-full transition-all duration-200"
+                  style={{ width: `${uploadJob.progress}%`, background: '#C9A84C' }}
+                />
+              </div>
+            </>
+          )}
+          {uploadJob.done && (
+            <p className="text-sm font-semibold text-green-700">✅ Souvenir partagé avec tous 🎉</p>
+          )}
+          {uploadJob.error && (
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold text-red-600">❌ {uploadJob.error}</p>
+              <button
+                onClick={() => setUploadJob({ active: false, progress: 0, done: false, error: null })}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── Barre de sélection fixe ─── */}
       <SelectionBar
         selectedMedia={selectedMedia}
         downloadMode={downloadMode}
-        onRequestCode={() => setShowCodeModal(true)}
+        onRequestCode={() => setCodeModalTarget(selectedMedia)}
         onClear={exitSelectionMode}
       />
 
       {/* ─── Modal code téléchargement ─── */}
-      {showCodeModal && (
+      {codeModalTarget !== null && (
         <DownloadCodeModal
-          selectedMedia={selectedMedia}
-          onClose={() => setShowCodeModal(false)}
+          selectedMedia={codeModalTarget}
+          onClose={() => setCodeModalTarget(null)}
         />
       )}
     </div>

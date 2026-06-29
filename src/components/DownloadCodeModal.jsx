@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { downloadAsZip } from '../lib/downloadHelpers.js'
+import { downloadMedia } from '../lib/downloadHelpers.js'
 
 export default function DownloadCodeModal({ selectedMedia, onClose }) {
   const [code, setCode] = useState('')
@@ -62,7 +62,7 @@ export default function DownloadCodeModal({ selectedMedia, onClose }) {
       if (data.valid) {
         setDownloading(true)
         try {
-          await downloadAsZip(selectedMedia)
+          await downloadMedia(selectedMedia)
           onClose()
         } catch (err) {
           setError(`Erreur : ${err.message}`)

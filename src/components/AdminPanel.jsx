@@ -97,6 +97,9 @@ function AdminDashboard({ onLogout }) {
   const [downloadMode, setDownloadMode] = useState('open')
   const [savingMode, setSavingMode] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [appTitle, setAppTitle] = useState('Notre Mariage 💍')
+  const [savingTitle, setSavingTitle] = useState(false)
+  const [titleSuccess, setTitleSuccess] = useState(false)
   const [diskData, setDiskData] = useState(null)
   const [diskError, setDiskError] = useState(false)
 
@@ -128,11 +131,12 @@ function AdminDashboard({ onLogout }) {
   // Chargement paramètres via API sécurisée
   useEffect(() => {
     async function loadSettings() {
-      const res = await fetch('/api/admin/settings', { headers: authHeaders() })
-      if (res.ok) {
-        const { value } = await res.json()
-        setDownloadMode(value)
-      }
+      const [modeRes, titleRes] = await Promise.all([
+        fetch('/api/admin/settings', { headers: authHeaders() }),
+        fetch('/api/admin/title', { headers: authHeaders() }),
+      ])
+      if (modeRes.ok) setDownloadMode((await modeRes.json()).value)
+      if (titleRes.ok) setAppTitle((await titleRes.json()).value)
     }
     loadSettings()
   }, [])
@@ -162,6 +166,20 @@ function AdminDashboard({ onLogout }) {
       body: JSON.stringify({ id: m.id, storage_path: m.storage_path }),
     })
     if (res.ok) setMedia((prev) => prev.filter((item) => item.id !== m.id))
+  }
+
+  async function saveTitle() {
+    setSavingTitle(true)
+    const res = await fetch('/api/admin/title', {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ value: appTitle }),
+    })
+    setSavingTitle(false)
+    if (res.ok) {
+      setTitleSuccess(true)
+      setTimeout(() => setTitleSuccess(false), 3000)
+    }
   }
 
   async function saveDownloadMode() {
@@ -331,6 +349,37 @@ function AdminDashboard({ onLogout }) {
             <InfoCard label="Durée max" value={`${import.meta.env.VITE_MAX_VIDEO_DURATION || 60} secondes`} />
             <InfoCard label="Taille max" value={`${import.meta.env.VITE_MAX_VIDEO_SIZE_MB || 100} Mo`} />
           </div>
+        </section>
+
+        {/* Personnalisation */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
+            ✏️ Personnalisation
+          </h2>
+          <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>
+            Titre affiché en haut de la galerie. Emoji acceptés 🎉💍
+          </p>
+          <input
+            type="text"
+            value={appTitle}
+            onChange={(e) => setAppTitle(e.target.value)}
+            maxLength={100}
+            placeholder="Notre Mariage 💍"
+            className="w-full border-2 rounded-lg px-4 py-2.5 text-sm outline-none mb-3"
+            style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem' }}
+          />
+          <p className="text-xs mb-3" style={{ color: '#8A7F72' }}>
+            Aperçu : <span style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>{appTitle || '…'}</span>
+          </p>
+          <button
+            onClick={saveTitle}
+            disabled={savingTitle || !appTitle.trim()}
+            className="px-6 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+            style={{ background: '#C9A84C' }}
+          >
+            {savingTitle ? 'Sauvegarde…' : 'Sauvegarder'}
+          </button>
+          {titleSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Titre mis à jour pour tous les invités.</p>}
         </section>
 
         {/* QR Code */}

@@ -1,19 +1,16 @@
 // Modale d'upload pour photos et vidéos
 // Deux onglets : Photo (appareil photo natif mobile) / Vidéo (caméra native mobile)
 // Validation côté client avant upload (durée, taille, type MIME)
-// Qualité originale préservée, aucune compression
+// L'upload réel est délégué à Gallery via onStartUpload pour continuer en arrière-plan
+// si l'invité ferme la fenêtre avant la fin de l'envoi
 import { useState, useRef } from 'react'
-import { supabase } from '../lib/supabase.js'
 import { validatePhoto, validateVideo } from '../lib/mediaValidation.js'
 
-export default function UploadModal({ onClose }) {
+export default function UploadModal({ onClose, onStartUpload }) {
   const [tab, setTab] = useState('photo') // 'photo' | 'video'
   const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null) // URL objet pour la prévisualisation
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const photoInputRef = useRef(null)
   const videoInputRef = useRef(null)
@@ -29,7 +26,6 @@ export default function UploadModal({ onClose }) {
   function switchTab(newTab) {
     clearPreview()
     setTab(newTab)
-    setSuccessMsg('')
   }
 
   async function handleFileChange(e) {
@@ -54,81 +50,19 @@ export default function UploadModal({ onClose }) {
     setPreview(URL.createObjectURL(selected))
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault()
     if (!file) return
-
-    setUploading(true)
-    setProgress(0)
-    setErrorMsg('')
-
-    try {
-      // Nom unique basé sur UUID pour éviter les collisions en cas d'upload simultané
-      const ext = file.raw.name.split('.').pop() || (tab === 'video' ? 'mp4' : 'jpg')
-      const fileName = `${crypto.randomUUID()}.${ext}`
-
-      // Upload dans le bucket Supabase Storage
-      // Supabase JS SDK ne supporte pas le suivi de progression natif,
-      // on simule un progrès linéaire jusqu'à 90% puis 100% à la fin
-      const progressInterval = setInterval(() => {
-        setProgress((p) => Math.min(p + 5, 90))
-      }, 200)
-
-      const { error: uploadError } = await supabase.storage
-        .from('wedding-media')
-        .upload(fileName, file.raw, {
-          cacheControl: '3600',
-          upsert: false,
-        })
-
-      clearInterval(progressInterval)
-
-      if (uploadError) throw uploadError
-
-      setProgress(95)
-
-      // Récupération de l'URL publique permanente
-      const { data: urlData } = supabase.storage
-        .from('wedding-media')
-        .getPublicUrl(fileName)
-
-      if (!urlData?.publicUrl) throw new Error('Impossible de récupérer l\'URL publique.')
-
-      // Insertion en base de données — déclenche l'événement Realtime pour tous les clients
-      const { error: dbError } = await supabase.from('media').insert({
-        pseudo: pseudo.trim() || 'Invité anonyme',
-        storage_path: fileName,
-        public_url: urlData.publicUrl,
-        type: tab,
-        duration_seconds: file.duration || null,
-      })
-
-      if (dbError) throw dbError
-
-      setProgress(100)
-      setSuccessMsg('Votre média est visible par tous 🎉')
-
-      // Réinitialise le formulaire après succès
-      setTimeout(() => {
-        clearPreview()
-        setSuccessMsg('')
-        setProgress(0)
-        if (photoInputRef.current) photoInputRef.current.value = ''
-        if (videoInputRef.current) videoInputRef.current.value = ''
-      }, 2500)
-    } catch (err) {
-      setErrorMsg(err.message || 'Une erreur est survenue. Réessayez.')
-      setProgress(0)
-    } finally {
-      setUploading(false)
-    }
+    // Délègue l'upload à Gallery : la modal se ferme immédiatement,
+    // un toast dans la galerie suit la progression en arrière-plan
+    onStartUpload(file, pseudo, tab)
   }
 
   return (
     <div
       className="fixed inset-0 z-40 flex items-end sm:items-center justify-center animate-fadeIn"
       style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={onClose}
+      onClick={() => { clearPreview(); onClose() }}
     >
       <div
         className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl"
@@ -141,7 +75,7 @@ export default function UploadModal({ onClose }) {
             Ajouter un souvenir
           </h2>
           <button
-            onClick={onClose}
+            onClick={() => { clearPreview(); onClose() }}
             className="text-2xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center"
           >
             ×
@@ -218,6 +152,9 @@ export default function UploadModal({ onClose }) {
               >
                 🎥 Choisir une vidéo
               </label>
+              <p className="text-xs text-center" style={{ color: '#8A7F72' }}>
+                1 minute maximum · Faites plusieurs vidéos courtes !
+              </p>
             </>
           )}
 
@@ -232,7 +169,7 @@ export default function UploadModal({ onClose }) {
             </div>
           )}
 
-          {/* Message d'erreur */}
+          {/* Message d'erreur de validation */}
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
               {errorMsg}
@@ -246,34 +183,15 @@ export default function UploadModal({ onClose }) {
             </div>
           )}
 
-          {/* Barre de progression */}
-          {uploading && (
-            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-              <div
-                className="h-2 rounded-full transition-all duration-200"
-                style={{ width: `${progress}%`, background: '#C9A84C' }}
-              />
-            </div>
-          )}
-
-          {/* Message succès */}
-          {successMsg && (
-            <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700 text-center font-medium">
-              {successMsg}
-            </div>
-          )}
-
           {/* Bouton envoyer */}
-          {!successMsg && (
-            <button
-              type="submit"
-              disabled={!file || uploading}
-              className="w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-40"
-              style={{ background: '#C9A84C' }}
-            >
-              {uploading ? `Envoi en cours… ${progress}%` : 'Envoyer 🎉'}
-            </button>
-          )}
+          <button
+            type="submit"
+            disabled={!file}
+            className="w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-40"
+            style={{ background: '#C9A84C' }}
+          >
+            Envoyer 🎉
+          </button>
         </form>
       </div>
     </div>
