@@ -1,21 +1,13 @@
-// Modale d'upload pour photos et vidéos
-// Deux onglets : Photo (appareil photo natif mobile) / Vidéo (caméra native mobile)
-// Validation côté client avant upload (durée, taille, type MIME)
-// L'upload réel est délégué à Gallery via onStartUpload pour continuer en arrière-plan
-// si l'invité ferme la fenêtre avant la fin de l'envoi
 import { useState, useRef } from 'react'
-import { validatePhoto, validateVideo } from '../lib/mediaValidation.js'
+import { validatePhoto } from '../lib/mediaValidation.js'
 
 export default function UploadModal({ onClose, onStartUpload }) {
-  const [tab, setTab] = useState('photo') // 'photo' | 'video'
   const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
   const [file, setFile] = useState(null)
-  const [preview, setPreview] = useState(null) // URL objet pour la prévisualisation
+  const [preview, setPreview] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
   const photoInputRef = useRef(null)
-  const videoInputRef = useRef(null)
 
-  // Nettoie la prévisualisation précédente avant d'en créer une nouvelle
   function clearPreview() {
     if (preview) URL.revokeObjectURL(preview)
     setPreview(null)
@@ -23,23 +15,12 @@ export default function UploadModal({ onClose, onStartUpload }) {
     setErrorMsg('')
   }
 
-  function switchTab(newTab) {
-    clearPreview()
-    setTab(newTab)
-  }
-
   async function handleFileChange(e) {
     const selected = e.target.files?.[0]
     if (!selected) return
     clearPreview()
 
-    let validationResult
-    if (tab === 'photo') {
-      validationResult = validatePhoto(selected)
-    } else {
-      // validateVideo est asynchrone car elle lit les métadonnées du fichier
-      validationResult = await validateVideo(selected)
-    }
+    const validationResult = validatePhoto(selected)
 
     if (!validationResult.valid) {
       setErrorMsg(validationResult.error)
@@ -55,7 +36,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
     if (!file) return
     // Délègue l'upload à Gallery : la modal se ferme immédiatement,
     // un toast dans la galerie suit la progression en arrière-plan
-    onStartUpload(file, pseudo, tab)
+    onStartUpload(file, pseudo, 'photo')
   }
 
   return (
@@ -82,22 +63,6 @@ export default function UploadModal({ onClose, onStartUpload }) {
           </button>
         </div>
 
-        {/* Onglets Photo / Vidéo */}
-        <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-lg">
-          {['photo', 'video'].map((t) => (
-            <button
-              key={t}
-              onClick={() => switchTab(t)}
-              className="flex-1 py-2 rounded-md text-sm font-semibold transition-all"
-              style={{
-                background: tab === t ? '#C9A84C' : 'transparent',
-                color: tab === t ? '#fff' : '#8A7F72',
-              }}
-            >
-              {t === 'photo' ? '📷 Photo' : '🎥 Vidéo'}
-            </button>
-          ))}
-        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Champ pseudo optionnel */}
@@ -115,48 +80,22 @@ export default function UploadModal({ onClose, onStartUpload }) {
           />
 
           {/* Bouton choisir fichier */}
-          {tab === 'photo' ? (
-            <>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileChange}
-                className="hidden"
-                id="photo-input"
-              />
-              <label
-                htmlFor="photo-input"
-                className="block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer transition-colors text-sm font-medium"
-                style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-              >
-                📷 Choisir une photo
-              </label>
-            </>
-          ) : (
-            <>
-              <input
-                ref={videoInputRef}
-                type="file"
-                accept="video/*"
-                capture="environment"
-                onChange={handleFileChange}
-                className="hidden"
-                id="video-input"
-              />
-              <label
-                htmlFor="video-input"
-                className="block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer transition-colors text-sm font-medium"
-                style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-              >
-                🎥 Choisir une vidéo
-              </label>
-              <p className="text-xs text-center" style={{ color: '#8A7F72' }}>
-                1 minute maximum · Faites plusieurs vidéos courtes !
-              </p>
-            </>
-          )}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileChange}
+            className="hidden"
+            id="photo-input"
+          />
+          <label
+            htmlFor="photo-input"
+            className="block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer transition-colors text-sm font-medium"
+            style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
+          >
+            📷 Choisir une photo
+          </label>
 
           {/* Prévisualisation */}
           {preview && (
