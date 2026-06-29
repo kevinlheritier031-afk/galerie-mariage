@@ -109,6 +109,7 @@ function AdminDashboard({ onLogout }) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deletingBulk, setDeletingBulk] = useState(false)
+  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres'
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
@@ -260,24 +261,51 @@ function AdminDashboard({ onLogout }) {
   return (
     <div className="min-h-screen" style={{ background: '#FDFAF6' }}>
       <header className="bg-white border-b border-gold/20 px-4 py-3 sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>
-            Administration 💍
-          </h1>
-          <button
-            onClick={onLogout}
-            className="text-sm px-3 py-1.5 rounded-lg border"
-            style={{ borderColor: '#8A7F72', color: '#8A7F72' }}
-          >
-            Déconnexion
-          </button>
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-3">
+            <h1 className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>
+              Administration 💍
+            </h1>
+            <button
+              onClick={onLogout}
+              className="text-sm px-3 py-1.5 rounded-lg border"
+              style={{ borderColor: '#8A7F72', color: '#8A7F72' }}
+            >
+              Déconnexion
+            </button>
+          </div>
+          {/* Onglets */}
+          <div className="flex gap-1">
+            {[
+              { key: 'medias', label: `📸 Médias`, badge: media.length },
+              { key: 'parametres', label: '⚙️ Paramètres' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className="px-4 py-2 text-sm font-semibold rounded-t-lg transition-all flex items-center gap-1.5"
+                style={{
+                  background: activeTab === tab.key ? '#FDFAF6' : 'transparent',
+                  color: activeTab === tab.key ? '#C9A84C' : '#8A7F72',
+                  borderBottom: activeTab === tab.key ? '2px solid #C9A84C' : '2px solid transparent',
+                }}
+              >
+                {tab.label}
+                {tab.badge !== undefined && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: '#C9A84C20', color: '#C9A84C' }}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-8">
 
-        {/* Médias */}
-        <section>
+        {/* ── Onglet Médias ── */}
+        {activeTab === 'medias' && <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
               📸 Médias
@@ -387,7 +415,10 @@ function AdminDashboard({ onLogout }) {
               })}
             </div>
           )}
-        </section>
+        </section>}
+
+        {/* ── Onglet Paramètres ── */}
+        {activeTab === 'parametres' && <>
 
         {/* Paramètres téléchargement */}
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -546,6 +577,8 @@ function AdminDashboard({ onLogout }) {
             ⬇️ Télécharger PNG
           </button>
         </section>
+
+        </>}
 
       </div>
     </div>
