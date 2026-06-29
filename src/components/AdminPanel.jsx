@@ -102,6 +102,10 @@ function AdminDashboard({ onLogout }) {
   const [titleSuccess, setTitleSuccess] = useState(false)
   const [diskData, setDiskData] = useState(null)
   const [diskError, setDiskError] = useState(false)
+  const [downloadCode, setDownloadCode] = useState('')
+  const [newCode, setNewCode] = useState('')
+  const [savingCode, setSavingCode] = useState(false)
+  const [codeSuccess, setCodeSuccess] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deletingBulk, setDeletingBulk] = useState(false)
@@ -134,12 +138,14 @@ function AdminDashboard({ onLogout }) {
   // Chargement paramètres via API sécurisée
   useEffect(() => {
     async function loadSettings() {
-      const [modeRes, titleRes] = await Promise.all([
+      const [modeRes, titleRes, codeRes] = await Promise.all([
         fetch('/api/admin/settings', { headers: authHeaders() }),
         fetch('/api/admin/title', { headers: authHeaders() }),
+        fetch('/api/admin/download-code', { headers: authHeaders() }),
       ])
       if (modeRes.ok) setDownloadMode((await modeRes.json()).value)
       if (titleRes.ok) setAppTitle((await titleRes.json()).value)
+      if (codeRes.ok) { const d = await codeRes.json(); setDownloadCode(d.value); setNewCode(d.value) }
     }
     loadSettings()
   }, [])
@@ -209,6 +215,22 @@ function AdminDashboard({ onLogout }) {
     if (res.ok) {
       setTitleSuccess(true)
       setTimeout(() => setTitleSuccess(false), 3000)
+    }
+  }
+
+  async function saveDownloadCode() {
+    if (!newCode.trim()) return
+    setSavingCode(true)
+    const res = await fetch('/api/admin/download-code', {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ value: newCode }),
+    })
+    setSavingCode(false)
+    if (res.ok) {
+      setDownloadCode(newCode)
+      setCodeSuccess(true)
+      setTimeout(() => setCodeSuccess(false), 3000)
     }
   }
 
@@ -413,6 +435,41 @@ function AdminDashboard({ onLogout }) {
           {saveSuccess && (
             <p className="mt-2 text-green-600 text-sm font-medium">✓ Paramètre sauvegardé.</p>
           )}
+        </section>
+
+        {/* Code post-soirée */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
+            🔒 Code post-soirée
+          </h2>
+          <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>
+            Code demandé aux invités pour télécharger en mode protégé.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value)}
+              placeholder="Nouveau code…"
+              maxLength={50}
+              className="flex-1 border-2 rounded-lg px-4 py-2.5 text-sm outline-none"
+              style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'monospace', fontSize: '1rem' }}
+            />
+            <button
+              onClick={saveDownloadCode}
+              disabled={savingCode || !newCode.trim() || newCode === downloadCode}
+              className="px-5 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+              style={{ background: '#C9A84C' }}
+            >
+              {savingCode ? '…' : 'Sauvegarder'}
+            </button>
+          </div>
+          {downloadCode && (
+            <p className="mt-2 text-xs" style={{ color: '#8A7F72' }}>
+              Code actuel : <span className="font-mono font-semibold" style={{ color: '#2C2C2C' }}>{downloadCode}</span>
+            </p>
+          )}
+          {codeSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Code mis à jour.</p>}
         </section>
 
         {/* Stockage disque */}
