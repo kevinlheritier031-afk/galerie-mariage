@@ -102,6 +102,9 @@ function AdminDashboard({ onLogout }) {
   const [titleSuccess, setTitleSuccess] = useState(false)
   const [diskData, setDiskData] = useState(null)
   const [diskError, setDiskError] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [deletingBulk, setDeletingBulk] = useState(false)
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
@@ -168,6 +171,33 @@ function AdminDashboard({ onLogout }) {
     if (res.ok) setMedia((prev) => prev.filter((item) => item.id !== m.id))
   }
 
+  async function deleteSelected() {
+    if (!window.confirm(`Supprimer ${selectedIds.size} média${selectedIds.size > 1 ? 's' : ''} ?`)) return
+    setDeletingBulk(true)
+    const targets = media.filter((m) => selectedIds.has(m.id))
+    await Promise.all(
+      targets.map((m) =>
+        fetch('/api/admin/delete-media', {
+          method: 'DELETE',
+          headers: authHeaders(),
+          body: JSON.stringify({ id: m.id, storage_path: m.storage_path }),
+        })
+      )
+    )
+    setMedia((prev) => prev.filter((m) => !selectedIds.has(m.id)))
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+    setDeletingBulk(false)
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
   async function saveTitle() {
     setSavingTitle(true)
     const res = await fetch('/api/admin/title', {
@@ -226,12 +256,55 @@ function AdminDashboard({ onLogout }) {
 
         {/* Médias */}
         <section>
-          <h2 className="text-lg font-bold mb-3 flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
-            📸 Médias
-            <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ background: '#C9A84C20', color: '#C9A84C' }}>
-              {photoCount} photo{photoCount !== 1 ? 's' : ''} · {videoCount} vidéo{videoCount !== 1 ? 's' : ''} · {media.length} total
-            </span>
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
+              📸 Médias
+              <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ background: '#C9A84C20', color: '#C9A84C' }}>
+                {photoCount} photo{photoCount !== 1 ? 's' : ''} · {videoCount} vidéo{videoCount !== 1 ? 's' : ''} · {media.length} total
+              </span>
+            </h2>
+            {!loadingMedia && media.length > 0 && (
+              <div className="flex items-center gap-2">
+                {selectionMode && (
+                  <>
+                    <button
+                      onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))}
+                      className="text-xs underline"
+                      style={{ color: '#C9A84C' }}
+                    >
+                      Tout
+                    </button>
+                    <button
+                      onClick={() => { setSelectionMode(false); setSelectedIds(new Set()) }}
+                      className="text-xs underline"
+                      style={{ color: '#8A7F72' }}
+                    >
+                      Annuler
+                    </button>
+                    {selectedIds.size > 0 && (
+                      <button
+                        onClick={deleteSelected}
+                        disabled={deletingBulk}
+                        className="text-xs px-3 py-1.5 rounded-lg text-white font-semibold disabled:opacity-50"
+                        style={{ background: '#ef4444' }}
+                      >
+                        {deletingBulk ? 'Suppression…' : `🗑 Supprimer (${selectedIds.size})`}
+                      </button>
+                    )}
+                  </>
+                )}
+                {!selectionMode && (
+                  <button
+                    onClick={() => setSelectionMode(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg border font-medium"
+                    style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
+                  >
+                    Sélectionner
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {loadingMedia ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -243,36 +316,53 @@ function AdminDashboard({ onLogout }) {
             <p className="text-sm py-4" style={{ color: '#8A7F72' }}>Aucun média pour l'instant.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {media.map((m) => (
-                <div key={m.id} className="relative rounded-lg overflow-hidden bg-white shadow-sm border border-gray-100">
-                  <div className="aspect-square relative overflow-hidden bg-gray-100">
-                    {m.type === 'video' ? (
-                      <video src={m.public_url} className="w-full h-full object-cover" preload="metadata" muted />
-                    ) : (
-                      <img src={m.public_url} alt={m.pseudo} className="w-full h-full object-cover" loading="lazy" />
-                    )}
-                    <span
-                      className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 rounded font-medium"
-                      style={{ background: m.type === 'video' ? '#2C2C2C' : '#C9A84C', color: '#fff' }}
-                    >
-                      {m.type === 'video' ? `▶ ${m.duration_seconds || '?'}s` : '📷'}
-                    </span>
-                    <button
-                      onClick={() => deleteMedia(m)}
-                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center shadow-md"
-                      title="Supprimer"
-                    >
-                      ×
-                    </button>
+              {media.map((m) => {
+                const isSelected = selectedIds.has(m.id)
+                return (
+                  <div
+                    key={m.id}
+                    className="relative rounded-lg overflow-hidden bg-white shadow-sm border-2 transition-colors"
+                    style={{ borderColor: isSelected ? '#ef4444' : '#f3f4f6' }}
+                    onClick={() => selectionMode && toggleSelect(m.id)}
+                  >
+                    <div className="aspect-square relative overflow-hidden bg-gray-100">
+                      {m.type === 'video' ? (
+                        <video src={m.public_url} className="w-full h-full object-cover" preload="metadata" muted />
+                      ) : (
+                        <img src={m.public_url} alt={m.pseudo} className="w-full h-full object-cover" loading="lazy" />
+                      )}
+                      <span
+                        className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: m.type === 'video' ? '#2C2C2C' : '#C9A84C', color: '#fff' }}
+                      >
+                        {m.type === 'video' ? `▶ ${m.duration_seconds || '?'}s` : '📷'}
+                      </span>
+                      {selectionMode ? (
+                        <div
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center"
+                          style={{ background: isSelected ? '#ef4444' : '#fff', borderColor: isSelected ? '#ef4444' : '#ccc' }}
+                        >
+                          {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteMedia(m) }}
+                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center shadow-md"
+                          title="Supprimer"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <p className="text-xs font-medium truncate" style={{ color: '#2C2C2C' }}>{m.pseudo || 'Anonyme'}</p>
+                      <p className="text-xs" style={{ color: '#8A7F72' }}>
+                        {new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
                   </div>
-                  <div className="px-2 py-1.5">
-                    <p className="text-xs font-medium truncate" style={{ color: '#2C2C2C' }}>{m.pseudo || 'Anonyme'}</p>
-                    <p className="text-xs" style={{ color: '#8A7F72' }}>
-                      {new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>
