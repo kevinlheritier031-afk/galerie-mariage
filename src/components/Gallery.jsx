@@ -163,6 +163,27 @@ export default function Gallery() {
     exitSelectionMode()
   }
 
+  // Mode désactivé : site entièrement bloqué
+  if (!loading && downloadMode === 'disabled') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center" style={{ background: '#FDFAF6' }}>
+        <div className="max-w-sm">
+          <p className="text-6xl mb-6">💍</p>
+          <h1 className="text-3xl font-bold mb-3" style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>
+            {appTitle}
+          </h1>
+          <div className="w-16 h-px mx-auto mb-5" style={{ background: '#C9A84C' }} />
+          <p className="text-base font-medium mb-2" style={{ color: '#2C2C2C' }}>
+            La galerie est fermée
+          </p>
+          <p className="text-sm" style={{ color: '#8A7F72' }}>
+            Merci d'avoir partagé ces beaux moments avec nous.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen" style={{ background: '#FDFAF6' }}>
       {/* ─── Header ─── */}
@@ -308,8 +329,8 @@ export default function Gallery() {
         )}
       </main>
 
-      {/* ─── Bouton flottant Ajouter ─── */}
-      {!selectionMode && (
+      {/* ─── Bouton flottant Ajouter (masqué en mode protégé et désactivé) ─── */}
+      {!selectionMode && downloadMode === 'open' && (
         <button
           onClick={() => setShowUpload(true)}
           className="fixed bottom-6 right-4 z-30 flex items-center gap-2 px-4 rounded-full shadow-lg font-semibold text-white transition-transform hover:scale-105 active:scale-95"
