@@ -476,7 +476,7 @@ function AdminDashboard({ onLogout }) {
           <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>
             Code demandé aux invités pour télécharger en mode protégé.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               value={newCode}
