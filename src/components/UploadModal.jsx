@@ -100,11 +100,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
           {/* Prévisualisation */}
           {preview && (
             <div className="rounded-lg overflow-hidden bg-gray-50 border" style={{ borderColor: '#C9A84C20' }}>
-              {tab === 'photo' ? (
-                <img src={preview} alt="Prévisualisation" className="w-full h-40 object-cover" />
-              ) : (
-                <video src={preview} controls className="w-full h-40 object-cover" />
-              )}
+              <img src={preview} alt="Prévisualisation" className="w-full h-40 object-cover" />
             </div>
           )}
 
