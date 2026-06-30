@@ -3,7 +3,7 @@
 // Vidéos : vérification durée et taille via un élément video temporaire
 
 // Charge les limites depuis les variables d'environnement
-const MAX_VIDEO_DURATION = parseInt(import.meta.env.VITE_MAX_VIDEO_DURATION || '60', 10)
+const MAX_VIDEO_DURATION = parseInt(import.meta.env.VITE_MAX_VIDEO_DURATION || '180', 10)
 const MAX_VIDEO_SIZE_MB = parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE_MB || '2048', 10)
 
 /**
