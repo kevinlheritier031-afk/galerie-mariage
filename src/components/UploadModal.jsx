@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { validatePhoto } from '../lib/mediaValidation.js'
+import { validatePhoto, validateVideo } from '../lib/mediaValidation.js'
 
 export default function UploadModal({ onClose, onStartUpload }) {
   const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
@@ -30,12 +30,22 @@ export default function UploadModal({ onClose, onStartUpload }) {
     const errors = []
 
     for (const f of selected) {
-      const result = validatePhoto(f)
-      if (result.valid) {
-        valid.push({ raw: f, duration: result.duration })
-        validPreviews.push(URL.createObjectURL(f))
+      if (f.type.startsWith('video/')) {
+        const result = await validateVideo(f)
+        if (result.valid) {
+          valid.push({ raw: f, duration: result.duration, type: 'video' })
+          validPreviews.push(URL.createObjectURL(f))
+        } else {
+          errors.push(`${f.name} : ${result.error}`)
+        }
       } else {
-        errors.push(`${f.name} : ${result.error}`)
+        const result = validatePhoto(f)
+        if (result.valid) {
+          valid.push({ raw: f, type: 'photo' })
+          validPreviews.push(URL.createObjectURL(f))
+        } else {
+          errors.push(`${f.name} : ${result.error}`)
+        }
       }
     }
 
@@ -63,6 +73,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
   function handleSubmit(e) {
     e.preventDefault()
     if (!files.length) return
+    // Le type réel est stocké dans chaque fileObj.type — 'photo' sert de fallback
     onStartUpload(files, pseudo, 'photo')
   }
 
@@ -128,7 +139,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 {/* Option Galerie — sélection multiple */}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*"
                   multiple
                   onChange={handleGalleryChange}
                   className="hidden"
@@ -144,7 +155,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                     Depuis ma galerie
                   </span>
                   <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
-                    1 ou plusieurs photos
+                    Photos & vidéos
                   </span>
                 </label>
 
@@ -185,7 +196,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium" style={{ color: '#8B7355' }}>
-                  {previews.length} photo{previews.length > 1 ? 's' : ''} sélectionnée{previews.length > 1 ? 's' : ''}
+                  {previews.length} fichier{previews.length > 1 ? 's' : ''} sélectionné{previews.length > 1 ? 's' : ''}
                 </span>
                 <button
                   type="button"
@@ -199,7 +210,14 @@ export default function UploadModal({ onClose, onStartUpload }) {
               <div className="grid grid-cols-3 gap-2">
                 {previews.map((src, i) => (
                   <div key={i} className="relative rounded-lg overflow-hidden aspect-square bg-gray-100">
-                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    {files[i]?.type === 'video' ? (
+                      <>
+                        <video src={src} className="w-full h-full object-cover" muted playsInline />
+                        <span className="absolute bottom-1 left-1 text-xs bg-black/60 text-white rounded px-1">▶</span>
+                      </>
+                    ) : (
+                      <img src={src} alt="" className="w-full h-full object-cover" />
+                    )}
                     <button
                       type="button"
                       onClick={() => removeFile(i)}
@@ -234,7 +252,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
             className="w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-40"
             style={{ background: '#C9A84C' }}
           >
-            {files.length > 1 ? `Envoyer ${files.length} photos 🎉` : 'Envoyer 🎉'}
+            {files.length > 1 ? `Envoyer ${files.length} souvenirs 🎉` : 'Envoyer 🎉'}
           </button>
         </form>
       </div>

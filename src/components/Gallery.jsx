@@ -63,11 +63,12 @@ export default function Gallery() {
   }
 
   async function uploadSingle(fileObj, pseudo, type, current, total) {
-    const ext = fileObj.raw.name.split('.').pop() || (type === 'video' ? 'mp4' : 'jpg')
+    const actualType = fileObj.type || type
+    const ext = fileObj.raw.name.split('.').pop() || (actualType === 'video' ? 'mp4' : 'jpg')
     const fileName = `${crypto.randomUUID()}.${ext}`
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
     const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-    const contentType = fileObj.raw.type || (type === 'video' ? 'video/mp4' : 'image/jpeg')
+    const contentType = fileObj.raw.type || (actualType === 'video' ? 'video/mp4' : 'image/jpeg')
 
     await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
@@ -107,7 +108,7 @@ export default function Gallery() {
       pseudo: pseudo.trim() || 'Invité anonyme',
       storage_path: fileName,
       public_url: urlData.publicUrl,
-      type,
+      type: actualType,
       duration_seconds: fileObj.duration || null,
     })
 
