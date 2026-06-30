@@ -47,15 +47,17 @@ export default function UploadModal({ onClose, onStartUpload }) {
   async function handleCameraChange(e) {
     const selected = e.target.files?.[0]
     if (!selected) return
-    clearAll()
 
     const result = validatePhoto(selected)
     if (!result.valid) {
       setErrorMsg(result.error)
+      e.target.value = ''
       return
     }
-    setFiles([{ raw: selected, duration: result.duration }])
-    setPreviews([URL.createObjectURL(selected)])
+    setFiles((prev) => [...prev, { raw: selected, duration: result.duration }])
+    setPreviews((prev) => [...prev, URL.createObjectURL(selected)])
+    // Reset pour pouvoir relancer l'appareil photo immédiatement
+    e.target.value = ''
   }
 
   function handleSubmit(e) {
@@ -103,7 +105,17 @@ export default function UploadModal({ onClose, onStartUpload }) {
             style={{ borderColor: '#C9A84C40', color: '#2C2C2C' }}
           />
 
-          {/* Encadré choix source photo */}
+          {/* Input caméra — toujours dans le DOM pour rester utilisable après la 1ère prise */}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleCameraChange}
+            className="hidden"
+            id="camera-input"
+          />
+
+          {/* Encadré choix source photo — affiché uniquement si aucune photo sélectionnée */}
           {!previews.length && (
             <div
               className="rounded-xl border-2 p-4"
@@ -137,14 +149,6 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 </label>
 
                 {/* Option Appareil photo */}
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleCameraChange}
-                  className="hidden"
-                  id="camera-input"
-                />
                 <label
                   htmlFor="camera-input"
                   className="flex flex-col items-center gap-2 py-4 px-2 rounded-xl border-2 cursor-pointer transition-all hover:bg-amber-50 active:scale-95"
@@ -160,6 +164,20 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 </label>
               </div>
             </div>
+          )}
+
+          {/* Bouton "Prendre une autre" — visible dès qu'une photo a été prise */}
+          {previews.length > 0 && (
+            <label
+              htmlFor="camera-input"
+              className="flex items-center justify-center gap-2 py-2.5 w-full rounded-xl border-2 cursor-pointer transition-all hover:bg-amber-50 active:scale-95"
+              style={{ borderColor: '#C9A84C', background: '#C9A84C08' }}
+            >
+              <span className="text-lg">📷</span>
+              <span className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
+                Prendre une autre photo
+              </span>
+            </label>
           )}
 
           {/* Prévisualisations */}
