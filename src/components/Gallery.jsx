@@ -275,6 +275,20 @@ export default function Gallery() {
 
       {/* ─── Contenu principal ─── */}
       <main className="max-w-5xl mx-auto px-2 py-3 pb-32">
+        {/* Intro : explication rapide pour les invités */}
+        {!loading && downloadMode === 'open' && (
+          <div className="text-center px-4 pt-3 pb-4 mb-1">
+            <p className="text-sm leading-relaxed" style={{ color: '#8A7F72' }}>
+              Appuyez sur{' '}
+              <span className="font-semibold" style={{ color: '#C9A84C' }}>📷 Ajouter</span>{' '}
+              pour prendre une photo en direct via votre appareil photo{' '}
+              <span className="font-medium" style={{ color: '#C9A84C' }}>ou</span>{' '}
+              importer vos propres clichés depuis votre galerie —{' '}
+              chaque souvenir partagé sera visible par tous les invités.
+            </p>
+          </div>
+        )}
+
         {/* Chargement */}
         {loading && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
