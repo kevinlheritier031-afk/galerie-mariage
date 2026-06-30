@@ -127,10 +127,10 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 >
                   <span className="text-3xl">📷</span>
                   <span className="text-xs font-semibold text-center leading-tight" style={{ color: '#2C2C2C' }}>
-                    Prendre une photo
+                    Photo en direct
                   </span>
                   <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
-                    Ouvrir l'appareil photo
+                    Prenez la photo maintenant avec votre appareil
                   </span>
                 </label>
               </div>
