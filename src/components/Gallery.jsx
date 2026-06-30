@@ -37,7 +37,7 @@ export default function Gallery() {
   const [codeModalTarget, setCodeModalTarget] = useState(null)
 
   // Upload en arrière-plan : persiste même si la modal est fermée
-  const [uploadJob, setUploadJob] = useState({ active: false, progress: 0, speed: 0, done: false, error: null })
+  const [uploadJob, setUploadJob] = useState({ active: false, progress: 0, speed: 0, done: false, error: null, current: 0, total: 0 })
   const tusUploadRef = useRef(null)
 
   // Bloque la fermeture de page pendant un upload actif
@@ -62,67 +62,74 @@ export default function Gallery() {
     }
   }
 
-  async function startUpload(fileObj, pseudo, type) {
+  async function uploadSingle(fileObj, pseudo, type, current, total) {
+    const ext = fileObj.raw.name.split('.').pop() || (type === 'video' ? 'mp4' : 'jpg')
+    const fileName = `${crypto.randomUUID()}.${ext}`
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    const contentType = fileObj.raw.type || (type === 'video' ? 'video/mp4' : 'image/jpeg')
+
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${supabaseUrl}/storage/v1/object/wedding-media/${fileName}`)
+      xhr.setRequestHeader('apikey', supabaseKey)
+      xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
+      xhr.setRequestHeader('Content-Type', contentType)
+      xhr.setRequestHeader('x-upsert', 'false')
+      xhr.setRequestHeader('cache-control', 'max-age=3600')
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const now = Date.now()
+          const pct = Math.round((e.loaded / e.total) * 95)
+          setUploadJob((prev) => {
+            const elapsed = (now - (prev._lastTime || now)) / 1000
+            const speedMBs = elapsed > 0.5
+              ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
+              : (prev.speed || 0)
+            return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
+          })
+        }
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve()
+        else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
+      }
+      xhr.onerror = () => reject(new Error('Erreur réseau.'))
+      xhr.send(fileObj.raw)
+    })
+
+    setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
+
+    const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
+    if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
+
+    const { error: dbError } = await supabase.from('media').insert({
+      pseudo: pseudo.trim() || 'Invité anonyme',
+      storage_path: fileName,
+      public_url: urlData.publicUrl,
+      type,
+      duration_seconds: fileObj.duration || null,
+    })
+
+    if (dbError) throw dbError
+  }
+
+  async function startUpload(filesArg, pseudo, type) {
     setShowUpload(false)
-    setUploadJob({ active: true, progress: 0, speed: 0, done: false, error: null })
+    const fileList = Array.isArray(filesArg) ? filesArg : [filesArg]
+    const total = fileList.length
+    setUploadJob({ active: true, progress: 0, speed: 0, done: false, error: null, current: 1, total })
 
     try {
-      const ext = fileObj.raw.name.split('.').pop() || (type === 'video' ? 'mp4' : 'jpg')
-      const fileName = `${crypto.randomUUID()}.${ext}`
+      for (let i = 0; i < fileList.length; i++) {
+        setUploadJob((prev) => ({ ...prev, current: i + 1, total, progress: 0, speed: 0 }))
+        await uploadSingle(fileList[i], pseudo, type, i + 1, total)
+      }
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-      const contentType = fileObj.raw.type || (type === 'video' ? 'video/mp4' : 'image/jpeg')
-
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', `${supabaseUrl}/storage/v1/object/wedding-media/${fileName}`)
-        xhr.setRequestHeader('apikey', supabaseKey)
-        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
-        xhr.setRequestHeader('Content-Type', contentType)
-        xhr.setRequestHeader('x-upsert', 'false')
-        xhr.setRequestHeader('cache-control', 'max-age=3600')
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const now = Date.now()
-            const pct = Math.round((e.loaded / e.total) * 95)
-            setUploadJob((prev) => {
-              const elapsed = (now - (prev._lastTime || now)) / 1000
-              const speedMBs = elapsed > 0.5
-                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
-                : (prev.speed || 0)
-              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now }
-            })
-          }
-        }
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
-        }
-        xhr.onerror = () => reject(new Error('Erreur réseau.'))
-        xhr.send(fileObj.raw)
-      })
-
-      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
-
-      const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
-      if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
-
-      const { error: dbError } = await supabase.from('media').insert({
-        pseudo: pseudo.trim() || 'Invité anonyme',
-        storage_path: fileName,
-        public_url: urlData.publicUrl,
-        type,
-        duration_seconds: fileObj.duration || null,
-      })
-
-      if (dbError) throw dbError
-
-      setUploadJob({ active: false, progress: 100, done: true, error: null })
-      setTimeout(() => setUploadJob({ active: false, progress: 0, done: false, error: null }), 3000)
+      setUploadJob({ active: false, progress: 100, done: true, error: null, current: total, total })
+      setTimeout(() => setUploadJob({ active: false, progress: 0, done: false, error: null, current: 0, total: 0 }), 3000)
     } catch (err) {
-      setUploadJob({ active: false, progress: 0, done: false, error: err.message || 'Une erreur est survenue.' })
+      setUploadJob({ active: false, progress: 0, done: false, error: err.message || 'Une erreur est survenue.', current: 0, total: 0 })
     }
   }
 
@@ -371,7 +378,7 @@ export default function Gallery() {
             <>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
-                  ⬆️ Envoi en cours… {uploadJob.progress}%
+                  ⬆️ Envoi en cours…{uploadJob.total > 1 ? ` (${uploadJob.current}/${uploadJob.total})` : ''} {uploadJob.progress}%
                 </p>
                 {uploadJob.speed > 0 && (
                   <p className="text-xs" style={{ color: '#8A7F72' }}>
@@ -390,7 +397,9 @@ export default function Gallery() {
             </>
           )}
           {uploadJob.done && (
-            <p className="text-sm font-semibold text-green-700">✅ Souvenir partagé avec tous 🎉</p>
+            <p className="text-sm font-semibold text-green-700">
+              ✅ {uploadJob.total > 1 ? `${uploadJob.total} souvenirs partagés` : 'Souvenir partagé'} avec tous 🎉
+            </p>
           )}
           {uploadJob.error && (
             <div className="flex items-start justify-between gap-2">

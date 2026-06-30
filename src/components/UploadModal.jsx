@@ -3,46 +3,72 @@ import { validatePhoto } from '../lib/mediaValidation.js'
 
 export default function UploadModal({ onClose, onStartUpload }) {
   const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
-  const [file, setFile] = useState(null)
-  const [preview, setPreview] = useState(null)
+  const [files, setFiles] = useState([])
+  const [previews, setPreviews] = useState([])
   const [errorMsg, setErrorMsg] = useState('')
-  const galleryInputRef = useRef(null)
-  const cameraInputRef = useRef(null)
 
-  function clearPreview() {
-    if (preview) URL.revokeObjectURL(preview)
-    setPreview(null)
-    setFile(null)
+  function clearAll() {
+    previews.forEach((p) => URL.revokeObjectURL(p))
+    setPreviews([])
+    setFiles([])
     setErrorMsg('')
   }
 
-  async function handleFileChange(e) {
-    const selected = e.target.files?.[0]
-    if (!selected) return
-    clearPreview()
+  function removeFile(index) {
+    URL.revokeObjectURL(previews[index])
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+    setPreviews((prev) => prev.filter((_, i) => i !== index))
+  }
 
-    const validationResult = validatePhoto(selected)
+  async function handleGalleryChange(e) {
+    const selected = Array.from(e.target.files || [])
+    if (!selected.length) return
+    clearAll()
 
-    if (!validationResult.valid) {
-      setErrorMsg(validationResult.error)
-      return
+    const valid = []
+    const validPreviews = []
+    const errors = []
+
+    for (const f of selected) {
+      const result = validatePhoto(f)
+      if (result.valid) {
+        valid.push({ raw: f, duration: result.duration })
+        validPreviews.push(URL.createObjectURL(f))
+      } else {
+        errors.push(`${f.name} : ${result.error}`)
+      }
     }
 
-    setFile({ raw: selected, duration: validationResult.duration })
-    setPreview(URL.createObjectURL(selected))
+    setFiles(valid)
+    setPreviews(validPreviews)
+    if (errors.length) setErrorMsg(errors.join('\n'))
+  }
+
+  async function handleCameraChange(e) {
+    const selected = e.target.files?.[0]
+    if (!selected) return
+    clearAll()
+
+    const result = validatePhoto(selected)
+    if (!result.valid) {
+      setErrorMsg(result.error)
+      return
+    }
+    setFiles([{ raw: selected, duration: result.duration }])
+    setPreviews([URL.createObjectURL(selected)])
   }
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!file) return
-    onStartUpload(file, pseudo, 'photo')
+    if (!files.length) return
+    onStartUpload(files, pseudo, 'photo')
   }
 
   return (
     <div
       className="fixed inset-0 z-40 flex items-end sm:items-center justify-center animate-fadeIn"
       style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={() => { clearPreview(); onClose() }}
+      onClick={() => { clearAll(); onClose() }}
     >
       <div
         className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl"
@@ -55,7 +81,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
             Ajouter un souvenir
           </h2>
           <button
-            onClick={() => { clearPreview(); onClose() }}
+            onClick={() => { clearAll(); onClose() }}
             className="text-2xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center"
           >
             ×
@@ -78,7 +104,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
           />
 
           {/* Encadré choix source photo */}
-          {!preview && (
+          {!previews.length && (
             <div
               className="rounded-xl border-2 p-4"
               style={{ borderColor: '#C9A84C30', background: '#FFFDF7' }}
@@ -87,12 +113,12 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 Comment souhaitez-vous ajouter votre photo ?
               </p>
               <div className="grid grid-cols-2 gap-3">
-                {/* Option Galerie */}
+                {/* Option Galerie — sélection multiple */}
                 <input
-                  ref={galleryInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  multiple
+                  onChange={handleGalleryChange}
                   className="hidden"
                   id="gallery-input"
                 />
@@ -106,17 +132,16 @@ export default function UploadModal({ onClose, onStartUpload }) {
                     Depuis ma galerie
                   </span>
                   <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
-                    Choisir une photo existante
+                    1 ou plusieurs photos
                   </span>
                 </label>
 
                 {/* Option Appareil photo */}
                 <input
-                  ref={cameraInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={handleFileChange}
+                  onChange={handleCameraChange}
                   className="hidden"
                   id="camera-input"
                 />
@@ -137,30 +162,49 @@ export default function UploadModal({ onClose, onStartUpload }) {
             </div>
           )}
 
-          {/* Prévisualisation */}
-          {preview && (
-            <div className="rounded-lg overflow-hidden bg-gray-50 border relative" style={{ borderColor: '#C9A84C20' }}>
-              <img src={preview} alt="Prévisualisation" className="w-full h-40 object-cover" />
-              <button
-                type="button"
-                onClick={clearPreview}
-                className="absolute top-2 right-2 bg-white rounded-full w-7 h-7 flex items-center justify-center text-gray-500 shadow text-sm hover:text-red-500 transition-colors"
-              >
-                ×
-              </button>
+          {/* Prévisualisations */}
+          {previews.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium" style={{ color: '#8B7355' }}>
+                  {previews.length} photo{previews.length > 1 ? 's' : ''} sélectionnée{previews.length > 1 ? 's' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="text-xs underline"
+                  style={{ color: '#C9A84C' }}
+                >
+                  Tout effacer
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {previews.map((src, i) => (
+                  <div key={i} className="relative rounded-lg overflow-hidden aspect-square bg-gray-100">
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      className="absolute top-1 right-1 bg-white rounded-full w-5 h-5 flex items-center justify-center text-gray-500 shadow text-xs hover:text-red-500 transition-colors leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Message d'erreur de validation */}
           {errorMsg && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600 whitespace-pre-line">
               {errorMsg}
               <button
                 type="button"
-                onClick={() => { setErrorMsg(''); clearPreview() }}
+                onClick={() => setErrorMsg('')}
                 className="ml-2 underline text-red-500"
               >
-                Réessayer
+                OK
               </button>
             </div>
           )}
@@ -168,11 +212,11 @@ export default function UploadModal({ onClose, onStartUpload }) {
           {/* Bouton envoyer */}
           <button
             type="submit"
-            disabled={!file}
+            disabled={!files.length}
             className="w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-40"
             style={{ background: '#C9A84C' }}
           >
-            Envoyer 🎉
+            {files.length > 1 ? `Envoyer ${files.length} photos 🎉` : 'Envoyer 🎉'}
           </button>
         </form>
       </div>
