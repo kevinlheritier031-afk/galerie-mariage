@@ -6,7 +6,8 @@ export default function UploadModal({ onClose, onStartUpload }) {
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
-  const photoInputRef = useRef(null)
+  const galleryInputRef = useRef(null)
+  const cameraInputRef = useRef(null)
 
   function clearPreview() {
     if (preview) URL.revokeObjectURL(preview)
@@ -34,8 +35,6 @@ export default function UploadModal({ onClose, onStartUpload }) {
   function handleSubmit(e) {
     e.preventDefault()
     if (!file) return
-    // Délègue l'upload à Gallery : la modal se ferme immédiatement,
-    // un toast dans la galerie suit la progression en arrière-plan
     onStartUpload(file, pseudo, 'photo')
   }
 
@@ -63,7 +62,6 @@ export default function UploadModal({ onClose, onStartUpload }) {
           </button>
         </div>
 
-
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Champ pseudo optionnel */}
           <input
@@ -79,28 +77,77 @@ export default function UploadModal({ onClose, onStartUpload }) {
             style={{ borderColor: '#C9A84C40', color: '#2C2C2C' }}
           />
 
-          {/* Bouton choisir fichier */}
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handleFileChange}
-            className="hidden"
-            id="photo-input"
-          />
-          <label
-            htmlFor="photo-input"
-            className="block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer transition-colors text-sm font-medium"
-            style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-          >
-            📷 Choisir une photo
-          </label>
+          {/* Encadré choix source photo */}
+          {!preview && (
+            <div
+              className="rounded-xl border-2 p-4"
+              style={{ borderColor: '#C9A84C30', background: '#FFFDF7' }}
+            >
+              <p className="text-xs text-center mb-3 font-medium" style={{ color: '#8B7355' }}>
+                Comment souhaitez-vous ajouter votre photo ?
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Option Galerie */}
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  id="gallery-input"
+                />
+                <label
+                  htmlFor="gallery-input"
+                  className="flex flex-col items-center gap-2 py-4 px-2 rounded-xl border-2 border-dashed cursor-pointer transition-all hover:bg-amber-50 active:scale-95"
+                  style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
+                >
+                  <span className="text-3xl">🖼️</span>
+                  <span className="text-xs font-semibold text-center leading-tight" style={{ color: '#2C2C2C' }}>
+                    Depuis ma galerie
+                  </span>
+                  <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
+                    Choisir une photo existante
+                  </span>
+                </label>
+
+                {/* Option Appareil photo */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  id="camera-input"
+                />
+                <label
+                  htmlFor="camera-input"
+                  className="flex flex-col items-center gap-2 py-4 px-2 rounded-xl border-2 cursor-pointer transition-all hover:bg-amber-50 active:scale-95"
+                  style={{ borderColor: '#C9A84C', background: '#C9A84C10', color: '#C9A84C' }}
+                >
+                  <span className="text-3xl">📷</span>
+                  <span className="text-xs font-semibold text-center leading-tight" style={{ color: '#2C2C2C' }}>
+                    Prendre une photo
+                  </span>
+                  <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
+                    Ouvrir l'appareil photo
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Prévisualisation */}
           {preview && (
-            <div className="rounded-lg overflow-hidden bg-gray-50 border" style={{ borderColor: '#C9A84C20' }}>
+            <div className="rounded-lg overflow-hidden bg-gray-50 border relative" style={{ borderColor: '#C9A84C20' }}>
               <img src={preview} alt="Prévisualisation" className="w-full h-40 object-cover" />
+              <button
+                type="button"
+                onClick={clearPreview}
+                className="absolute top-2 right-2 bg-white rounded-full w-7 h-7 flex items-center justify-center text-gray-500 shadow text-sm hover:text-red-500 transition-colors"
+              >
+                ×
+              </button>
             </div>
           )}
 
