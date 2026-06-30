@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { validatePhoto } from '../lib/mediaValidation.js'
+import { validatePhoto, validateVideo } from '../lib/mediaValidation.js'
 
 export default function UploadModal({ onClose, onStartUpload }) {
   const [pseudo, setPseudo] = useState(() => localStorage.getItem('wedding_pseudo') || '')
@@ -30,12 +30,22 @@ export default function UploadModal({ onClose, onStartUpload }) {
     const errors = []
 
     for (const f of selected) {
-      const result = validatePhoto(f)
-      if (result.valid) {
-        valid.push({ raw: f, type: 'photo' })
-        validPreviews.push(URL.createObjectURL(f))
+      if (f.type.startsWith('video/')) {
+        const result = await validateVideo(f)
+        if (result.valid) {
+          valid.push({ raw: f, duration: result.duration, type: 'video' })
+          validPreviews.push(URL.createObjectURL(f))
+        } else {
+          errors.push(`${f.name} : ${result.error}`)
+        }
       } else {
-        errors.push(`${f.name} : ${result.error}`)
+        const result = validatePhoto(f)
+        if (result.valid) {
+          valid.push({ raw: f, type: 'photo' })
+          validPreviews.push(URL.createObjectURL(f))
+        } else {
+          errors.push(`${f.name} : ${result.error}`)
+        }
       }
     }
 
@@ -129,7 +139,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 {/* Option Galerie — sélection multiple */}
                 <input
                   type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,video/3gpp"
                   multiple
                   onChange={handleGalleryChange}
                   className="hidden"
@@ -145,7 +155,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                     Depuis ma galerie
                   </span>
                   <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
-                    Photos
+                    Photos & vidéos
                   </span>
                 </label>
 
@@ -200,7 +210,14 @@ export default function UploadModal({ onClose, onStartUpload }) {
               <div className="grid grid-cols-3 gap-2">
                 {previews.map((src, i) => (
                   <div key={i} className="relative rounded-lg overflow-hidden aspect-square bg-gray-100">
+                    {files[i]?.type === 'video' ? (
+                      <>
+                        <video src={src} className="w-full h-full object-cover" muted playsInline />
+                        <span className="absolute bottom-1 left-1 text-xs bg-black/60 text-white rounded px-1">▶</span>
+                      </>
+                    ) : (
                       <img src={src} alt="" className="w-full h-full object-cover" />
+                    )}
                     <button
                       type="button"
                       onClick={() => removeFile(i)}

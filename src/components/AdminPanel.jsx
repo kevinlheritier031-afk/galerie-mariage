@@ -173,7 +173,7 @@ function AdminDashboard({ onLogout }) {
     const res = await fetch('/api/admin/delete-media', {
       method: 'DELETE',
       headers: authHeaders(),
-      body: JSON.stringify({ id: m.id, storage_path: m.storage_path }),
+      body: JSON.stringify({ id: m.id, storage_path: m.storage_path, source: m.source || 'supabase' }),
     })
     if (res.ok) setMedia((prev) => prev.filter((item) => item.id !== m.id))
   }
@@ -187,7 +187,7 @@ function AdminDashboard({ onLogout }) {
         fetch('/api/admin/delete-media', {
           method: 'DELETE',
           headers: authHeaders(),
-          body: JSON.stringify({ id: m.id, storage_path: m.storage_path }),
+          body: JSON.stringify({ id: m.id, storage_path: m.storage_path, source: m.source || 'supabase' }),
         })
       )
     )

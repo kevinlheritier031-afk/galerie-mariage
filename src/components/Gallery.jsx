@@ -64,55 +64,106 @@ export default function Gallery() {
 
   async function uploadSingle(fileObj, pseudo, type, current, total) {
     const actualType = fileObj.type || type
-    const ext = fileObj.raw.name.split('.').pop() || (actualType === 'video' ? 'mp4' : 'jpg')
-    const fileName = `${crypto.randomUUID()}.${ext}`
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
     const contentType = fileObj.raw.type || (actualType === 'video' ? 'video/mp4' : 'image/jpeg')
 
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${supabaseUrl}/storage/v1/object/wedding-media/${fileName}`)
-      xhr.setRequestHeader('apikey', supabaseKey)
-      xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
-      xhr.setRequestHeader('Content-Type', contentType)
-      xhr.setRequestHeader('x-upsert', 'false')
-      xhr.setRequestHeader('cache-control', 'max-age=3600')
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const now = Date.now()
-          const pct = Math.round((e.loaded / e.total) * 95)
-          setUploadJob((prev) => {
-            const elapsed = (now - (prev._lastTime || now)) / 1000
-            const speedMBs = elapsed > 0.5
-              ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
-              : (prev.speed || 0)
-            return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
-          })
+    if (actualType === 'video') {
+      // ── Vidéo → upload direct vers Cloudflare R2 via presigned URL ──
+      const presignRes = await fetch('/api/presign-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: fileObj.raw.name, contentType }),
+      })
+      if (!presignRes.ok) throw new Error("Impossible de préparer l'upload vidéo.")
+      const { uploadUrl, key, publicUrl } = await presignRes.json()
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('PUT', uploadUrl)
+        xhr.setRequestHeader('Content-Type', contentType)
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const now = Date.now()
+            const pct = Math.round((e.loaded / e.total) * 95)
+            setUploadJob((prev) => {
+              const elapsed = (now - (prev._lastTime || now)) / 1000
+              const speedMBs = elapsed > 0.5
+                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
+                : (prev.speed || 0)
+              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
+            })
+          }
         }
-      }
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve()
-        else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
-      }
-      xhr.onerror = () => reject(new Error('Erreur réseau.'))
-      xhr.send(fileObj.raw)
-    })
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`Erreur R2 ${xhr.status} : ${xhr.responseText}`))
+        }
+        xhr.onerror = () => reject(new Error('Erreur réseau.'))
+        xhr.send(fileObj.raw)
+      })
 
-    setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
+      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
 
-    const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
-    if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
+      const { error: dbError } = await supabase.from('media').insert({
+        pseudo: pseudo.trim() || 'Invité anonyme',
+        storage_path: key,
+        public_url: publicUrl,
+        type: 'video',
+        duration_seconds: fileObj.duration || null,
+        source: 'r2',
+      })
+      if (dbError) throw dbError
 
-    const { error: dbError } = await supabase.from('media').insert({
-      pseudo: pseudo.trim() || 'Invité anonyme',
-      storage_path: fileName,
-      public_url: urlData.publicUrl,
-      type: actualType,
-      duration_seconds: fileObj.duration || null,
-    })
+    } else {
+      // ── Photo → upload vers Supabase Storage (inchangé) ──
+      const ext = fileObj.raw.name.split('.').pop() || 'jpg'
+      const fileName = `${crypto.randomUUID()}.${ext}`
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-    if (dbError) throw dbError
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/wedding-media/${fileName}`)
+        xhr.setRequestHeader('apikey', supabaseKey)
+        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
+        xhr.setRequestHeader('Content-Type', contentType)
+        xhr.setRequestHeader('x-upsert', 'false')
+        xhr.setRequestHeader('cache-control', 'max-age=3600')
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const now = Date.now()
+            const pct = Math.round((e.loaded / e.total) * 95)
+            setUploadJob((prev) => {
+              const elapsed = (now - (prev._lastTime || now)) / 1000
+              const speedMBs = elapsed > 0.5
+                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
+                : (prev.speed || 0)
+              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
+            })
+          }
+        }
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
+        }
+        xhr.onerror = () => reject(new Error('Erreur réseau.'))
+        xhr.send(fileObj.raw)
+      })
+
+      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
+
+      const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
+      if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
+
+      const { error: dbError } = await supabase.from('media').insert({
+        pseudo: pseudo.trim() || 'Invité anonyme',
+        storage_path: fileName,
+        public_url: urlData.publicUrl,
+        type: 'photo',
+        duration_seconds: null,
+        source: 'supabase',
+      })
+      if (dbError) throw dbError
+    }
   }
 
   async function startUpload(filesArg, pseudo, type) {
