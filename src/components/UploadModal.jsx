@@ -129,7 +129,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 {/* Option Galerie — sélection multiple */}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif"
                   multiple
                   onChange={handleGalleryChange}
                   className="hidden"

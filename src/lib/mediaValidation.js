@@ -11,6 +11,9 @@ const MAX_VIDEO_SIZE_MB = parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE_MB || '20
  * Retourne { valid: true } ou { valid: false, error: string }
  */
 export function validatePhoto(file) {
+  if (file.type.startsWith('video/')) {
+    return { valid: false, error: 'Les vidéos ne sont pas acceptées, seulement les photos.' }
+  }
   if (!file.type.startsWith('image/')) {
     return { valid: false, error: 'Le fichier sélectionné n\'est pas une image.' }
   }
