@@ -1,14 +1,16 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import MediaCard from './MediaCard.jsx'
 import Lightbox from './Lightbox.jsx'
 import UploadModal from './UploadModal.jsx'
 import SelectionBar from './SelectionBar.jsx'
 import DownloadCodeModal from './DownloadCodeModal.jsx'
+import UploadQueue from './UploadQueue.jsx'
 import { useMedia } from '../hooks/useMedia.js'
 import { useSettings } from '../hooks/useSettings.js'
 import { supabase } from '../lib/supabase.js'
 import { downloadSingle } from '../lib/downloadHelpers.js'
 import { logger } from '../lib/logger.js'
+import { multipartUpload } from '../lib/multipartUpload.js'
 
 const TABS = [
   { key: 'all', label: 'Tout' },
@@ -20,103 +22,73 @@ export default function Gallery() {
   const { media, loading, error } = useMedia()
   const { downloadMode, appTitle } = useSettings()
 
-  // Met à jour le titre de l'onglet navigateur en temps réel
   useEffect(() => {
     document.title = appTitle
   }, [appTitle])
+
   const [activeTab, setActiveTab] = useState('all')
-
   const [lightboxIndex, setLightboxIndex] = useState(null)
-
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
-
   const [showUpload, setShowUpload] = useState(false)
-  // codeModalTarget = tableau de médias à télécharger après saisie du code
-  // null = modal fermée, [media, ...] = modal ouverte pour cette liste
   const [codeModalTarget, setCodeModalTarget] = useState(null)
 
-  // Upload en arrière-plan : persiste même si la modal est fermée
-  const [uploadJob, setUploadJob] = useState({ active: false, progress: 0, speed: 0, done: false, error: null, current: 0, total: 0 })
-  const tusUploadRef = useRef(null)
+  // Queue d'upload : tableau de { id, name, type, status, progress, speed, error }
+  const [queue, setQueue] = useState([])
+
+  function patchJob(id, patch) {
+    setQueue((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)))
+  }
+
+  const isAnyActive = queue.some((j) => j.status === 'uploading' || j.status === 'waiting')
 
   // Bloque la fermeture de page pendant un upload actif
   useEffect(() => {
-    if (!uploadJob.active) return
+    if (!isAnyActive) return
     const handler = (e) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [uploadJob.active])
+  }, [isAnyActive])
 
-  // Téléchargement depuis le lightbox (un seul média)
-  async function handleLightboxDownload(media) {
+  async function handleLightboxDownload(m) {
     if (downloadMode === 'disabled') return
     if (downloadMode === 'protected') {
-      setCodeModalTarget([media])
+      setCodeModalTarget([m])
       return
     }
     try {
-      await downloadSingle(media)
+      await downloadSingle(m)
     } catch (err) {
       alert(`Erreur de téléchargement : ${err.message}`)
     }
   }
 
-  async function uploadSingle(fileObj, pseudo, type, current, total) {
-    const actualType = fileObj.type || type
-    const contentType = fileObj.raw.type || (actualType === 'video' ? 'video/mp4' : 'image/jpeg')
+  async function uploadSingle(fileObj, pseudo, jobId) {
+    const isVideo = fileObj.raw.type.startsWith('video/') || fileObj.type === 'video'
+    const contentType = fileObj.raw.type || (isVideo ? 'video/mp4' : 'image/jpeg')
 
-    if (actualType === 'video') {
-      // ── Vidéo → upload direct vers Cloudflare R2 via presigned URL ──
-      let presignRes
+    if (isVideo) {
+      // Vidéo → multipart upload vers R2
+      const lastRef = { time: Date.now(), loaded: 0 }
+      let result
       try {
-        presignRes = await fetch('/api/presign-video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: fileObj.raw.name, contentType }),
+        result = await multipartUpload(fileObj.raw, contentType, (loaded, total) => {
+          const now = Date.now()
+          const elapsed = (now - lastRef.time) / 1000
+          let speed = 0
+          if (elapsed > 0.5) {
+            speed = (loaded - lastRef.loaded) / elapsed / (1024 * 1024)
+            lastRef.time = now
+            lastRef.loaded = loaded
+          }
+          patchJob(jobId, { progress: Math.min(95, Math.round((loaded / total) * 95)), speed })
         })
-        if (!presignRes.ok) throw new Error(`Presign HTTP ${presignRes.status}`)
       } catch (err) {
-        logger.error('upload:presign', err.message, { filename: fileObj.raw.name, contentType })
-        throw new Error("Impossible de préparer l'upload vidéo.")
+        logger.error('upload:multipart', err.message, { filename: fileObj.raw.name, contentType })
+        throw new Error("Échec upload vidéo : " + err.message)
       }
 
-      const { uploadUrl, key, publicUrl } = await presignRes.json()
-
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('PUT', uploadUrl)
-        xhr.setRequestHeader('Content-Type', contentType)
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const now = Date.now()
-            const pct = Math.round((e.loaded / e.total) * 95)
-            setUploadJob((prev) => {
-              const elapsed = (now - (prev._lastTime || now)) / 1000
-              const speedMBs = elapsed > 0.5
-                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
-                : (prev.speed || 0)
-              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
-            })
-          }
-        }
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve()
-          } else {
-            logger.error('upload:r2-put', `R2 PUT ${xhr.status}`, { status: xhr.status, response: xhr.responseText.slice(0, 500), filename: fileObj.raw.name })
-            reject(new Error(`Erreur R2 ${xhr.status}`))
-          }
-        }
-        xhr.onerror = () => {
-          logger.error('upload:r2-network', 'Erreur réseau PUT R2', { filename: fileObj.raw.name, contentType, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
-          reject(new Error('Erreur réseau.'))
-        }
-        xhr.send(fileObj.raw)
-      })
-
-      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
-
+      const { key, publicUrl } = result
       const { error: dbError } = await supabase.from('media').insert({
         pseudo: pseudo.trim() || 'Invité anonyme',
         storage_path: key,
@@ -129,11 +101,10 @@ export default function Gallery() {
         logger.error('upload:supabase-insert', dbError.message, { key, type: 'video' })
         throw dbError
       }
-
       logger.info('upload:success', 'Vidéo uploadée', { key, sizeMB: (fileObj.raw.size / 1048576).toFixed(1), duration: fileObj.duration })
 
     } else {
-      // ── Photo → upload vers Supabase Storage (inchangé) ──
+      // Photo → Supabase Storage
       const ext = fileObj.raw.name.split('.').pop() || 'jpg'
       const fileName = `${crypto.randomUUID()}.${ext}`
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -147,18 +118,18 @@ export default function Gallery() {
         xhr.setRequestHeader('Content-Type', contentType)
         xhr.setRequestHeader('x-upsert', 'false')
         xhr.setRequestHeader('cache-control', 'max-age=3600')
+        const lastRef = { time: Date.now(), loaded: 0 }
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const now = Date.now()
-            const pct = Math.round((e.loaded / e.total) * 95)
-            setUploadJob((prev) => {
-              const elapsed = (now - (prev._lastTime || now)) / 1000
-              const speedMBs = elapsed > 0.5
-                ? (e.loaded - (prev._lastLoaded || 0)) / elapsed / (1024 * 1024)
-                : (prev.speed || 0)
-              return { ...prev, progress: pct, speed: speedMBs, _lastLoaded: e.loaded, _lastTime: now, current, total }
-            })
+          if (!e.lengthComputable) return
+          const now = Date.now()
+          const elapsed = (now - lastRef.time) / 1000
+          let speed = 0
+          if (elapsed > 0.5) {
+            speed = (e.loaded - lastRef.loaded) / elapsed / (1024 * 1024)
+            lastRef.time = now
+            lastRef.loaded = e.loaded
           }
+          patchJob(jobId, { progress: Math.min(95, Math.round((e.loaded / e.total) * 95)), speed })
         }
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
@@ -169,13 +140,11 @@ export default function Gallery() {
           }
         }
         xhr.onerror = () => {
-          logger.error('upload:storage-network', 'Erreur réseau PUT Storage', { filename: fileObj.raw.name, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
+          logger.error('upload:storage-network', 'Erreur réseau', { filename: fileObj.raw.name })
           reject(new Error('Erreur réseau.'))
         }
         xhr.send(fileObj.raw)
       })
-
-      setUploadJob((prev) => ({ ...prev, progress: 95, speed: 0 }))
 
       const { data: urlData } = supabase.storage.from('wedding-media').getPublicUrl(fileName)
       if (!urlData?.publicUrl) throw new Error("Impossible de récupérer l'URL publique.")
@@ -192,38 +161,47 @@ export default function Gallery() {
         logger.error('upload:supabase-insert', dbError.message, { fileName, type: 'photo' })
         throw dbError
       }
-
       logger.info('upload:success', 'Photo uploadée', { fileName, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
     }
   }
 
-  async function startUpload(filesArg, pseudo, type) {
+  async function startUpload(filesArg, pseudo) {
     setShowUpload(false)
     const fileList = Array.isArray(filesArg) ? filesArg : [filesArg]
-    const total = fileList.length
-    setUploadJob({ active: true, progress: 0, speed: 0, done: false, error: null, current: 1, total })
 
-    try {
-      for (let i = 0; i < fileList.length; i++) {
-        setUploadJob((prev) => ({ ...prev, current: i + 1, total, progress: 0, speed: 0 }))
-        await uploadSingle(fileList[i], pseudo, type, i + 1, total)
+    const newJobs = fileList.map((f, i) => ({
+      id: `job-${Date.now()}-${i}`,
+      name: f.raw.name,
+      type: f.raw.type.startsWith('video/') || f.type === 'video' ? 'video' : 'photo',
+      status: 'waiting',
+      progress: 0,
+      speed: 0,
+      error: null,
+    }))
+    setQueue(newJobs)
+
+    let hadError = false
+    for (let i = 0; i < newJobs.length; i++) {
+      const job = newJobs[i]
+      setQueue((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'uploading' } : j)))
+      try {
+        await uploadSingle(fileList[i], pseudo, job.id)
+        setQueue((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'done', progress: 100, speed: 0 } : j)))
+      } catch (err) {
+        setQueue((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'error', speed: 0, error: err.message || 'Erreur inconnue' } : j)))
+        hadError = true
       }
+    }
 
-      setUploadJob({ active: false, progress: 100, done: true, error: null, current: total, total })
-      setTimeout(() => setUploadJob({ active: false, progress: 0, done: false, error: null, current: 0, total: 0 }), 3000)
-    } catch (err) {
-      setUploadJob({ active: false, progress: 0, done: false, error: err.message || 'Une erreur est survenue.', current: 0, total: 0 })
+    if (!hadError) {
+      setTimeout(() => setQueue([]), 4000)
     }
   }
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
-
-  const filteredMedia =
-    activeTab === 'all' ? media : media.filter((m) => m.type === activeTab)
-
+  const filteredMedia = activeTab === 'all' ? media : media.filter((m) => m.type === activeTab)
   const selectedMedia = media.filter((m) => selectedIds.has(m.id))
-
   const activateSelectionMode = useCallback(() => setSelectionMode(true), [])
 
   function toggleSelect(m) {
@@ -235,25 +213,11 @@ export default function Gallery() {
     })
   }
 
-  function selectAll() {
-    setSelectedIds(new Set(filteredMedia.map((m) => m.id)))
-  }
+  function selectAll() { setSelectedIds(new Set(filteredMedia.map((m) => m.id))) }
+  function deselectAll() { setSelectedIds(new Set()) }
+  function exitSelectionMode() { setSelectionMode(false); setSelectedIds(new Set()) }
+  function switchTab(key) { setActiveTab(key); exitSelectionMode() }
 
-  function deselectAll() {
-    setSelectedIds(new Set())
-  }
-
-  function exitSelectionMode() {
-    setSelectionMode(false)
-    setSelectedIds(new Set())
-  }
-
-  function switchTab(key) {
-    setActiveTab(key)
-    exitSelectionMode()
-  }
-
-  // Mode désactivé : site entièrement bloqué
   if (!loading && downloadMode === 'disabled') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center" style={{ background: '#FDFAF6' }}>
@@ -263,12 +227,8 @@ export default function Gallery() {
             {appTitle}
           </h1>
           <div className="w-16 h-px mx-auto mb-5" style={{ background: '#C9A84C' }} />
-          <p className="text-base font-medium mb-2" style={{ color: '#2C2C2C' }}>
-            La galerie est fermée
-          </p>
-          <p className="text-sm" style={{ color: '#8A7F72' }}>
-            Merci d'avoir partagé ces beaux moments avec nous.
-          </p>
+          <p className="text-base font-medium mb-2" style={{ color: '#2C2C2C' }}>La galerie est fermée</p>
+          <p className="text-sm" style={{ color: '#8A7F72' }}>Merci d'avoir partagé ces beaux moments avec nous.</p>
         </div>
       </div>
     )
@@ -279,12 +239,8 @@ export default function Gallery() {
       {/* ─── Header ─── */}
       <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-gold/20 px-4 py-3">
         <div className="max-w-5xl mx-auto">
-          {/* Ligne titre + actions */}
           <div className="flex items-center justify-between">
-            <h1
-              className="text-2xl font-bold"
-              style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}
-            >
+            <h1 className="text-2xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>
               {appTitle}
             </h1>
 
@@ -309,17 +265,9 @@ export default function Gallery() {
                   <span className="font-medium" style={{ color: '#2C2C2C' }}>
                     {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
                   </span>
-                  <button onClick={selectAll} className="text-xs underline" style={{ color: '#C9A84C' }}>
-                    Tout
-                  </button>
-                  <button onClick={deselectAll} className="text-xs underline" style={{ color: '#8A7F72' }}>
-                    Aucun
-                  </button>
-                  <button
-                    onClick={exitSelectionMode}
-                    className="text-xs px-2 py-1 rounded border"
-                    style={{ borderColor: '#8A7F72', color: '#8A7F72' }}
-                  >
+                  <button onClick={selectAll} className="text-xs underline" style={{ color: '#C9A84C' }}>Tout</button>
+                  <button onClick={deselectAll} className="text-xs underline" style={{ color: '#8A7F72' }}>Aucun</button>
+                  <button onClick={exitSelectionMode} className="text-xs px-2 py-1 rounded border" style={{ borderColor: '#8A7F72', color: '#8A7F72' }}>
                     Annuler
                   </button>
                 </div>
@@ -327,27 +275,19 @@ export default function Gallery() {
             </div>
           </div>
 
-          {/* Onglets Tout / Photos / Vidéos */}
           {!loading && media.length > 0 && (
             <div className="flex gap-2 mt-3">
               {TABS.map((tab) => {
-                const count =
-                  tab.key === 'all' ? media.length
-                  : tab.key === 'photo' ? photoCount
-                  : videoCount
+                const count = tab.key === 'all' ? media.length : tab.key === 'photo' ? photoCount : videoCount
                 const active = activeTab === tab.key
                 return (
                   <button
                     key={tab.key}
                     onClick={() => switchTab(tab.key)}
                     className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
-                    style={{
-                      background: active ? '#C9A84C' : '#C9A84C18',
-                      color: active ? '#fff' : '#8A7F72',
-                    }}
+                    style={{ background: active ? '#C9A84C' : '#C9A84C18', color: active ? '#fff' : '#8A7F72' }}
                   >
-                    {tab.label}{' '}
-                    <span className="opacity-70 text-xs">({count})</span>
+                    {tab.label} <span className="opacity-70 text-xs">({count})</span>
                   </button>
                 )
               })}
@@ -358,7 +298,6 @@ export default function Gallery() {
 
       {/* ─── Contenu principal ─── */}
       <main className="max-w-5xl mx-auto px-2 py-3 pb-32">
-        {/* Intro : explication rapide pour les invités */}
         {!loading && downloadMode === 'open' && (
           <div className="text-center px-4 pt-3 pb-4 mb-1">
             <p className="text-sm leading-relaxed" style={{ color: '#8A7F72' }}>
@@ -372,7 +311,6 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Chargement */}
         {loading && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -381,7 +319,6 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Erreur */}
         {error && (
           <div className="text-center py-16 text-red-500">
             <p className="text-4xl mb-3">⚠️</p>
@@ -389,20 +326,16 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Galerie vide */}
         {!loading && !error && media.length === 0 && (
           <div className="text-center py-20">
             <p className="text-5xl mb-4">📷</p>
             <p className="text-lg font-medium" style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>
               Aucun souvenir pour l'instant
             </p>
-            <p className="text-sm mt-2" style={{ color: '#8A7F72' }}>
-              Soyez le premier à partager un moment !
-            </p>
+            <p className="text-sm mt-2" style={{ color: '#8A7F72' }}>Soyez le premier à partager un moment !</p>
           </div>
         )}
 
-        {/* Onglet vide mais galerie non vide */}
         {!loading && media.length > 0 && filteredMedia.length === 0 && (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">{activeTab === 'photo' ? '📷' : '🎥'}</p>
@@ -412,7 +345,6 @@ export default function Gallery() {
           </div>
         )}
 
-        {/* Grille 2 cols mobile / 3 tablette / 4 desktop */}
         {!loading && filteredMedia.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {filteredMedia.map((m) => {
@@ -433,7 +365,7 @@ export default function Gallery() {
         )}
       </main>
 
-      {/* ─── Bouton flottant Ajouter (masqué en mode protégé et désactivé) ─── */}
+      {/* ─── Bouton flottant Ajouter ─── */}
       {!selectionMode && downloadMode === 'open' && (
         <button
           onClick={() => setShowUpload(true)}
@@ -444,7 +376,7 @@ export default function Gallery() {
         </button>
       )}
 
-      {/* ─── Lightbox (navigue dans tous les médias) ─── */}
+      {/* ─── Lightbox ─── */}
       {lightboxIndex !== null && (
         <Lightbox
           media={media}
@@ -465,54 +397,13 @@ export default function Gallery() {
         />
       )}
 
-      {/* ─── Toast upload arrière-plan ─── */}
-      {(uploadJob.active || uploadJob.done || uploadJob.error) && (
-        <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-white rounded-xl shadow-xl px-4 py-3 w-72 border"
-          style={{ borderColor: '#C9A84C40' }}
-        >
-          {uploadJob.active && (
-            <>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
-                  ⬆️ Envoi en cours…{uploadJob.total > 1 ? ` (${uploadJob.current}/${uploadJob.total})` : ''} {uploadJob.progress}%
-                </p>
-                {uploadJob.speed > 0 && (
-                  <p className="text-xs" style={{ color: '#8A7F72' }}>
-                    {uploadJob.speed < 1
-                      ? `${(uploadJob.speed * 1024).toFixed(0)} Ko/s`
-                      : `${uploadJob.speed.toFixed(1)} Mo/s`}
-                  </p>
-                )}
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="h-1.5 rounded-full transition-all duration-200"
-                  style={{ width: `${uploadJob.progress}%`, background: '#C9A84C' }}
-                />
-              </div>
-            </>
-          )}
-          {uploadJob.done && (
-            <p className="text-sm font-semibold text-green-700">
-              ✅ {uploadJob.total > 1 ? `${uploadJob.total} souvenirs partagés` : 'Souvenir partagé'} avec tous 🎉
-            </p>
-          )}
-          {uploadJob.error && (
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-semibold text-red-600">❌ {uploadJob.error}</p>
-              <button
-                onClick={() => setUploadJob({ active: false, progress: 0, done: false, error: null })}
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
-              >
-                ×
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* ─── Queue d'upload ─── */}
+      <UploadQueue
+        jobs={queue}
+        onDismissError={(id) => setQueue((prev) => prev.filter((j) => j.id !== id))}
+      />
 
-      {/* ─── Barre de sélection fixe ─── */}
+      {/* ─── Barre de sélection ─── */}
       <SelectionBar
         selectedMedia={selectedMedia}
         downloadMode={downloadMode}
