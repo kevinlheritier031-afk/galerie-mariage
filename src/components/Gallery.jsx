@@ -12,11 +12,6 @@ import { downloadSingle } from '../lib/downloadHelpers.js'
 import { logger } from '../lib/logger.js'
 import { multipartUpload } from '../lib/multipartUpload.js'
 
-const TABS = [
-  { key: 'all', label: 'Tout' },
-  { key: 'photo', label: 'Photos' },
-]
-
 export default function Gallery() {
   const { media, loading, error } = useMedia()
   const { downloadMode, appTitle } = useSettings()
@@ -25,7 +20,6 @@ export default function Gallery() {
     document.title = appTitle
   }, [appTitle])
 
-  const [activeTab, setActiveTab] = useState('all')
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -200,9 +194,6 @@ export default function Gallery() {
     }
   }
 
-  const photoCount = media.filter((m) => m.type === 'photo').length
-  const videoCount = media.filter((m) => m.type === 'video').length
-  const filteredMedia = activeTab === 'all' ? media : media.filter((m) => m.type === activeTab)
   const selectedMedia = media.filter((m) => selectedIds.has(m.id))
   const activateSelectionMode = useCallback(() => setSelectionMode(true), [])
 
@@ -215,10 +206,9 @@ export default function Gallery() {
     })
   }
 
-  function selectAll() { setSelectedIds(new Set(filteredMedia.map((m) => m.id))) }
+  function selectAll() { setSelectedIds(new Set(media.map((m) => m.id))) }
   function deselectAll() { setSelectedIds(new Set()) }
   function exitSelectionMode() { setSelectionMode(false); setSelectedIds(new Set()) }
-  function switchTab(key) { setActiveTab(key); exitSelectionMode() }
 
   if (!loading && downloadMode === 'disabled') {
     return (
@@ -277,24 +267,6 @@ export default function Gallery() {
             </div>
           </div>
 
-          {!loading && media.length > 0 && (
-            <div className="flex gap-2 mt-3">
-              {TABS.map((tab) => {
-                const count = tab.key === 'all' ? media.length : tab.key === 'photo' ? photoCount : videoCount
-                const active = activeTab === tab.key
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => switchTab(tab.key)}
-                    className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
-                    style={{ background: active ? '#C9A84C' : '#C9A84C18', color: active ? '#fff' : '#8A7F72' }}
-                  >
-                    {tab.label} <span className="opacity-70 text-xs">({count})</span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
         </div>
       </header>
 
@@ -338,18 +310,9 @@ export default function Gallery() {
           </div>
         )}
 
-        {!loading && media.length > 0 && filteredMedia.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-3">{activeTab === 'photo' ? '📷' : '🎥'}</p>
-            <p className="text-sm" style={{ color: '#8A7F72' }}>
-              Aucune {activeTab === 'photo' ? 'photo' : 'vidéo'} pour l'instant.
-            </p>
-          </div>
-        )}
-
-        {!loading && filteredMedia.length > 0 && (
+        {!loading && media.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {filteredMedia.map((m) => {
+            {media.map((m) => {
               const originalIndex = media.findIndex((item) => item.id === m.id)
               return (
                 <MediaCard
