@@ -4,7 +4,7 @@
 
 // Charge les limites depuis les variables d'environnement
 const MAX_VIDEO_DURATION = 180
-const MAX_VIDEO_SIZE_MB = parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE_MB || '2048', 10)
+const MAX_VIDEO_SIZE_MB = parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE_MB || '100', 10)
 
 /**
  * Valide une photo — vérifie uniquement le type MIME
