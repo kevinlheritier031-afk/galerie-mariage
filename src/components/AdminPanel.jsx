@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../lib/supabase.js'
-import { multipartUpload } from '../lib/multipartUpload.js'
 
 const TOKEN_KEY = 'admin_token'
 
@@ -18,7 +17,6 @@ export default function AdminPanel() {
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
 
-  // Vérifie si un token valide est déjà en session
   useEffect(() => {
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) setAuthenticated(true)
@@ -101,8 +99,6 @@ function AdminDashboard({ onLogout }) {
   const [appTitle, setAppTitle] = useState('Notre Mariage 💍')
   const [savingTitle, setSavingTitle] = useState(false)
   const [titleSuccess, setTitleSuccess] = useState(false)
-  const [diskData, setDiskData] = useState(null)
-  const [diskError, setDiskError] = useState(false)
   const [downloadCode, setDownloadCode] = useState('')
   const [newCode, setNewCode] = useState('')
   const [savingCode, setSavingCode] = useState(false)
@@ -110,26 +106,12 @@ function AdminDashboard({ onLogout }) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deletingBulk, setDeletingBulk] = useState(false)
-  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres' | 'logs' | 'videos'
-
-  // État upload vidéo admin
-  const [videoFile, setVideoFile] = useState(null)
-  const [videoPseudo, setVideoPseudo] = useState('Admin')
-  const [videoPhase, setVideoPhase] = useState(null) // null | 'presign' | 'uploading' | 'saving' | 'done' | 'error'
-  const [videoProgress, setVideoProgress] = useState(0)
-  const [videoSpeed, setVideoSpeed] = useState(0)
-  const [videoError, setVideoError] = useState('')
-  const videoSpeedRef = useRef({ time: Date.now(), loaded: 0 })
-  const [logs, setLogs] = useState([])
-  const [logsLoading, setLogsLoading] = useState(false)
-  const [logsFilter, setLogsFilter] = useState('all') // 'all' | 'error' | 'warn' | 'info'
-  const [clearingLogs, setClearingLogs] = useState(false)
+  const [activeTab, setActiveTab] = useState('medias')
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
   const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
 
-  // Chargement médias via client anon (lecture publique autorisée par RLS)
   useEffect(() => {
     async function load() {
       const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false })
@@ -150,7 +132,6 @@ function AdminDashboard({ onLogout }) {
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // Chargement paramètres via API sécurisée
   useEffect(() => {
     async function loadSettings() {
       const [modeRes, titleRes, codeRes] = await Promise.all([
@@ -163,23 +144,6 @@ function AdminDashboard({ onLogout }) {
       if (codeRes.ok) { const d = await codeRes.json(); setDownloadCode(d.value); setNewCode(d.value) }
     }
     loadSettings()
-  }, [])
-
-  // Polling disque toutes les 30 secondes
-  useEffect(() => {
-    async function fetchDisk() {
-      try {
-        const res = await fetch('/api/disk-usage')
-        if (!res.ok) throw new Error()
-        setDiskData(await res.json())
-        setDiskError(false)
-      } catch {
-        setDiskError(true)
-      }
-    }
-    fetchDisk()
-    const interval = setInterval(fetchDisk, 30_000)
-    return () => clearInterval(interval)
   }, [])
 
   async function deleteMedia(m) {
@@ -221,109 +185,24 @@ function AdminDashboard({ onLogout }) {
 
   async function saveTitle() {
     setSavingTitle(true)
-    const res = await fetch('/api/admin/title', {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify({ value: appTitle }),
-    })
+    const res = await fetch('/api/admin/title', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ value: appTitle }) })
     setSavingTitle(false)
-    if (res.ok) {
-      setTitleSuccess(true)
-      setTimeout(() => setTitleSuccess(false), 3000)
-    }
+    if (res.ok) { setTitleSuccess(true); setTimeout(() => setTitleSuccess(false), 3000) }
   }
 
   async function saveDownloadCode() {
     if (!newCode.trim()) return
     setSavingCode(true)
-    const res = await fetch('/api/admin/download-code', {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify({ value: newCode }),
-    })
+    const res = await fetch('/api/admin/download-code', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ value: newCode }) })
     setSavingCode(false)
-    if (res.ok) {
-      setDownloadCode(newCode)
-      setCodeSuccess(true)
-      setTimeout(() => setCodeSuccess(false), 3000)
-    }
+    if (res.ok) { setDownloadCode(newCode); setCodeSuccess(true); setTimeout(() => setCodeSuccess(false), 3000) }
   }
 
   async function saveDownloadMode() {
     setSavingMode(true)
-    const res = await fetch('/api/admin/settings', {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify({ value: downloadMode }),
-    })
+    const res = await fetch('/api/admin/settings', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ value: downloadMode }) })
     setSavingMode(false)
-    if (res.ok) {
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
-    }
-  }
-
-  async function fetchLogs() {
-    setLogsLoading(true)
-    const res = await fetch('/api/admin/logs', { headers: authHeaders() })
-    if (res.ok) setLogs(await res.json())
-    setLogsLoading(false)
-  }
-
-  useEffect(() => {
-    if (activeTab === 'logs') fetchLogs()
-  }, [activeTab])
-
-  async function clearAllLogs() {
-    if (!window.confirm('Supprimer tous les logs ?')) return
-    setClearingLogs(true)
-    await fetch('/api/admin/logs', { method: 'DELETE', headers: authHeaders() })
-    setLogs([])
-    setClearingLogs(false)
-  }
-
-  async function handleAdminVideoUpload() {
-    if (!videoFile) return
-    setVideoPhase('presign')
-    setVideoProgress(0)
-    setVideoSpeed(0)
-    setVideoError('')
-    videoSpeedRef.current = { time: Date.now(), loaded: 0 }
-
-    try {
-      const { key, publicUrl } = await multipartUpload(
-        videoFile,
-        videoFile.type || 'video/mp4',
-        (loaded, total) => {
-          const now = Date.now()
-          const ref = videoSpeedRef.current
-          const elapsed = (now - ref.time) / 1000
-          if (elapsed > 0.5) {
-            setVideoSpeed((loaded - ref.loaded) / elapsed / (1024 * 1024))
-            videoSpeedRef.current = { time: now, loaded }
-          }
-          setVideoProgress(Math.min(95, Math.round((loaded / total) * 95)))
-        },
-        (phase) => setVideoPhase(phase),
-      )
-
-      setVideoPhase('saving')
-      const { error: dbError } = await supabase.from('media').insert({
-        pseudo: videoPseudo.trim() || 'Admin',
-        storage_path: key,
-        public_url: publicUrl,
-        type: 'video',
-        source: 'r2',
-      })
-      if (dbError) throw dbError
-
-      setVideoPhase('done')
-      setVideoProgress(100)
-      setVideoFile(null)
-    } catch (err) {
-      setVideoError(err.message || 'Erreur inconnue')
-      setVideoPhase('error')
-    }
+    if (res.ok) { setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000) }
   }
 
   function downloadQrCode() {
@@ -351,13 +230,10 @@ function AdminDashboard({ onLogout }) {
               Déconnexion
             </button>
           </div>
-          {/* Onglets */}
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex gap-1">
             {[
               { key: 'medias', label: `📸 Médias`, badge: media.length },
-              { key: 'videos', label: '🎥 Upload vidéo' },
               { key: 'parametres', label: '⚙️ Paramètres' },
-              { key: 'logs', label: '🪵 Logs', badge: logs.filter(l => l.level === 'error').length || undefined },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -383,508 +259,164 @@ function AdminDashboard({ onLogout }) {
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-8">
 
-        {/* ── Onglet Médias ── */}
-        {activeTab === 'medias' && <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
-              📸 Médias
-              <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ background: '#C9A84C20', color: '#C9A84C' }}>
-                {photoCount} photo{photoCount !== 1 ? 's' : ''} · {videoCount} vidéo{videoCount !== 1 ? 's' : ''} · {media.length} total
-              </span>
-            </h2>
-            {!loadingMedia && media.length > 0 && (
-              <div className="flex items-center gap-2">
-                {selectionMode && (
-                  <>
-                    <button
-                      onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))}
-                      className="text-xs underline"
-                      style={{ color: '#C9A84C' }}
-                    >
-                      Tout
-                    </button>
-                    <button
-                      onClick={() => { setSelectionMode(false); setSelectedIds(new Set()) }}
-                      className="text-xs underline"
-                      style={{ color: '#8A7F72' }}
-                    >
-                      Annuler
-                    </button>
-                    {selectedIds.size > 0 && (
-                      <button
-                        onClick={deleteSelected}
-                        disabled={deletingBulk}
-                        className="text-xs px-3 py-1.5 rounded-lg text-white font-semibold disabled:opacity-50"
-                        style={{ background: '#ef4444' }}
-                      >
-                        {deletingBulk ? 'Suppression…' : `🗑 Supprimer (${selectedIds.size})`}
-                      </button>
-                    )}
-                  </>
-                )}
-                {!selectionMode && (
-                  <button
-                    onClick={() => setSelectionMode(true)}
-                    className="text-xs px-3 py-1.5 rounded-lg border font-medium"
-                    style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-                  >
-                    Sélectionner
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {loadingMedia ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="aspect-square rounded-lg bg-gray-200 animate-pulse" />
-              ))}
-            </div>
-          ) : media.length === 0 ? (
-            <p className="text-sm py-4" style={{ color: '#8A7F72' }}>Aucun média pour l'instant.</p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {media.map((m) => {
-                const isSelected = selectedIds.has(m.id)
-                return (
-                  <div
-                    key={m.id}
-                    className="relative rounded-lg overflow-hidden bg-white shadow-sm border-2 transition-colors"
-                    style={{ borderColor: isSelected ? '#ef4444' : '#f3f4f6' }}
-                    onClick={() => selectionMode && toggleSelect(m.id)}
-                  >
-                    <div className="aspect-square relative overflow-hidden bg-gray-100">
-                      {m.type === 'video' ? (
-                        <video src={m.public_url} className="w-full h-full object-cover" preload="metadata" muted />
-                      ) : (
-                        <img src={m.public_url} alt={m.pseudo} className="w-full h-full object-cover" loading="lazy" />
-                      )}
-                      <span
-                        className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: m.type === 'video' ? '#2C2C2C' : '#C9A84C', color: '#fff' }}
-                      >
-                        {m.type === 'video' ? `▶ ${m.duration_seconds || '?'}s` : '📷'}
-                      </span>
-                      {selectionMode ? (
-                        <div
-                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center"
-                          style={{ background: isSelected ? '#ef4444' : '#fff', borderColor: isSelected ? '#ef4444' : '#ccc' }}
-                        >
-                          {isSelected && <span className="text-white text-xs font-bold">✓</span>}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteMedia(m) }}
-                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center shadow-md"
-                          title="Supprimer"
-                        >
-                          ×
+        {/* ── Médias ── */}
+        {activeTab === 'medias' && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
+                📸 Médias
+                <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ background: '#C9A84C20', color: '#C9A84C' }}>
+                  {photoCount} photo{photoCount !== 1 ? 's' : ''} · {videoCount} vidéo{videoCount !== 1 ? 's' : ''} · {media.length} total
+                </span>
+              </h2>
+              {!loadingMedia && media.length > 0 && (
+                <div className="flex items-center gap-2">
+                  {selectionMode && (
+                    <>
+                      <button onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))} className="text-xs underline" style={{ color: '#C9A84C' }}>Tout</button>
+                      <button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()) }} className="text-xs underline" style={{ color: '#8A7F72' }}>Annuler</button>
+                      {selectedIds.size > 0 && (
+                        <button onClick={deleteSelected} disabled={deletingBulk} className="text-xs px-3 py-1.5 rounded-lg text-white font-semibold disabled:opacity-50" style={{ background: '#ef4444' }}>
+                          {deletingBulk ? 'Suppression…' : `🗑 Supprimer (${selectedIds.size})`}
                         </button>
                       )}
-                    </div>
-                    <div className="px-2 py-1.5">
-                      <p className="text-xs font-medium truncate" style={{ color: '#2C2C2C' }}>{m.pseudo || 'Anonyme'}</p>
-                      <p className="text-xs" style={{ color: '#8A7F72' }}>
-                        {new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>}
-
-        {/* ── Onglet Upload vidéo (admin dev) ── */}
-        {activeTab === 'videos' && (
-          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-            <div>
-              <h2 className="text-lg font-bold" style={{ fontFamily: 'Playfair Display, serif' }}>🎥 Upload vidéo — Admin</h2>
-              <p className="text-xs mt-1" style={{ color: '#8A7F72' }}>Module de test — non visible par les invités.</p>
-            </div>
-
-            <input
-              type="text"
-              value={videoPseudo}
-              onChange={(e) => setVideoPseudo(e.target.value)}
-              placeholder="Pseudo"
-              maxLength={50}
-              className="w-full border rounded-lg px-3 py-2.5 text-sm outline-none"
-              style={{ borderColor: '#C9A84C40' }}
-            />
-
-            <div
-              className="rounded-xl border-2 border-dashed p-6 flex flex-col items-center gap-3 cursor-pointer hover:bg-amber-50 transition-colors"
-              style={{ borderColor: '#C9A84C' }}
-              onClick={() => document.getElementById('admin-video-input').click()}
-            >
-              <span className="text-4xl">🎬</span>
-              <span className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
-                {videoFile ? videoFile.name : 'Choisir une vidéo'}
-              </span>
-              {videoFile && (
-                <span className="text-xs" style={{ color: '#8A7F72' }}>
-                  {(videoFile.size / 1024 / 1024).toFixed(1)} Mo · {videoFile.type}
-                </span>
-              )}
-              <input
-                id="admin-video-input"
-                type="file"
-                accept="video/*"
-                className="hidden"
-                onChange={(e) => {
-                  setVideoFile(e.target.files?.[0] || null)
-                  setVideoPhase(null)
-                  setVideoProgress(0)
-                  setVideoError('')
-                  e.target.value = ''
-                }}
-              />
-            </div>
-
-            {/* Progression */}
-            {videoPhase && videoPhase !== 'error' && videoPhase !== 'done' && (
-              <div>
-                <div className="flex justify-between text-xs mb-1" style={{ color: '#8A7F72' }}>
-                  <span>
-                    {videoPhase === 'presign' && 'Préparation…'}
-                    {videoPhase === 'uploading' && `Envoi… ${videoProgress}%`}
-                    {videoPhase === 'saving' && 'Enregistrement en base…'}
-                  </span>
-                  {videoSpeed > 0 && (
-                    <span>{videoSpeed < 1 ? `${(videoSpeed * 1024).toFixed(0)} Ko/s` : `${videoSpeed.toFixed(1)} Mo/s`}</span>
+                    </>
+                  )}
+                  {!selectionMode && (
+                    <button onClick={() => setSelectionMode(true)} className="text-xs px-3 py-1.5 rounded-lg border font-medium" style={{ borderColor: '#C9A84C', color: '#C9A84C' }}>
+                      Sélectionner
+                    </button>
                   )}
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`h-2 rounded-full transition-all ${videoPhase === 'presign' ? 'animate-pulse' : ''}`}
-                    style={{
-                      width: videoPhase === 'presign' ? '100%' : `${videoProgress}%`,
-                      background: videoPhase === 'presign' ? '#C9A84C40' : '#C9A84C',
-                    }}
-                  />
-                </div>
+              )}
+            </div>
+
+            {loadingMedia ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {Array.from({ length: 8 }).map((_, i) => <div key={i} className="aspect-square rounded-lg bg-gray-200 animate-pulse" />)}
               </div>
-            )}
-
-            {videoPhase === 'done' && (
-              <p className="text-green-600 text-sm font-medium">✓ Vidéo uploadée avec succès !</p>
-            )}
-            {videoPhase === 'error' && (
-              <p className="text-red-500 text-sm">{videoError}</p>
-            )}
-
-            <button
-              onClick={handleAdminVideoUpload}
-              disabled={!videoFile || (videoPhase && videoPhase !== 'done' && videoPhase !== 'error')}
-              className="w-full py-3 rounded-lg text-white font-semibold text-sm disabled:opacity-40 transition-opacity"
-              style={{ background: '#C9A84C' }}
-            >
-              {videoPhase === 'uploading' ? `Envoi… ${videoProgress}%` :
-               videoPhase === 'presign' ? 'Préparation…' :
-               videoPhase === 'saving' ? 'Finalisation…' :
-               'Uploader la vidéo'}
-            </button>
-          </section>
-        )}
-
-        {/* ── Onglet Paramètres ── */}
-        {activeTab === 'parametres' && <>
-
-        {/* Paramètres téléchargement */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>
-            ⬇️ Paramètres téléchargement
-          </h2>
-          <div className="space-y-3">
-            {[
-              { value: 'open', icon: '🟢', label: 'Mode soirée', desc: 'Téléchargement libre, sans code' },
-              { value: 'protected', icon: '🔒', label: 'Mode post-soirée', desc: 'Code requis pour télécharger' },
-              { value: 'disabled', icon: '⛔', label: 'Désactivé', desc: 'Téléchargement impossible' },
-            ].map((opt) => (
-              <label
-                key={opt.value}
-                className="flex items-start gap-3 p-3 rounded-xl cursor-pointer border-2 transition-colors"
-                style={{
-                  borderColor: downloadMode === opt.value ? '#C9A84C' : '#f0ece6',
-                  background: downloadMode === opt.value ? '#C9A84C08' : 'transparent',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="download_mode"
-                  value={opt.value}
-                  checked={downloadMode === opt.value}
-                  onChange={(e) => setDownloadMode(e.target.value)}
-                  className="mt-0.5"
-                  style={{ accentColor: '#C9A84C' }}
-                />
-                <div>
-                  <p className="font-medium text-sm" style={{ color: '#2C2C2C' }}>{opt.icon} {opt.label}</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#8A7F72' }}>{opt.desc}</p>
-                </div>
-              </label>
-            ))}
-          </div>
-          <button
-            onClick={saveDownloadMode}
-            disabled={savingMode}
-            className="mt-4 px-6 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-            style={{ background: '#C9A84C' }}
-          >
-            {savingMode ? 'Sauvegarde…' : 'Sauvegarder'}
-          </button>
-          {saveSuccess && (
-            <p className="mt-2 text-green-600 text-sm font-medium">✓ Paramètre sauvegardé.</p>
-          )}
-        </section>
-
-        {/* Code post-soirée */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
-            🔒 Code post-soirée
-          </h2>
-          <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>
-            Code demandé aux invités pour télécharger en mode protégé.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={newCode}
-              onChange={(e) => setNewCode(e.target.value)}
-              placeholder="Nouveau code…"
-              maxLength={50}
-              className="flex-1 border-2 rounded-lg px-4 py-2.5 text-sm outline-none"
-              style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'monospace', fontSize: '1rem' }}
-            />
-            <button
-              onClick={saveDownloadCode}
-              disabled={savingCode || !newCode.trim() || newCode === downloadCode}
-              className="px-5 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-              style={{ background: '#C9A84C' }}
-            >
-              {savingCode ? '…' : 'Sauvegarder'}
-            </button>
-          </div>
-          {downloadCode && (
-            <p className="mt-2 text-xs" style={{ color: '#8A7F72' }}>
-              Code actuel : <span className="font-mono font-semibold" style={{ color: '#2C2C2C' }}>{downloadCode}</span>
-            </p>
-          )}
-          {codeSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Code mis à jour.</p>}
-        </section>
-
-        {/* Stockage disque */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>💾 Stockage disque</h2>
-          {diskError ? (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-orange-700 text-sm">
-              ⚠️ API disque inaccessible — VPS hors ligne ?
-            </div>
-          ) : !diskData ? (
-            <div className="text-sm" style={{ color: '#8A7F72' }}>Chargement…</div>
-          ) : (
-            <div className="space-y-5">
-              <DiskWidget label="Disque additionnel /mnt/media-storage" disk={diskData.additional} thresholdWarn={80} thresholdCrit={90} critLabel="Bascule sur disque principal imminente" />
-              <DiskWidget label="Disque principal /dev/sda1" disk={diskData.main} thresholdWarn={80} thresholdCrit={85} critLabel="Espace critique" />
-            </div>
-          )}
-        </section>
-
-        {/* Limites vidéo */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-3" style={{ fontFamily: 'Playfair Display, serif' }}>🎥 Limites vidéo</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <InfoCard label="Durée max" value={`${import.meta.env.VITE_MAX_VIDEO_DURATION || 60} secondes`} />
-            <InfoCard label="Taille max" value={`${import.meta.env.VITE_MAX_VIDEO_SIZE_MB || 100} Mo`} />
-          </div>
-        </section>
-
-        {/* Personnalisation */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
-            ✏️ Personnalisation
-          </h2>
-          <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>
-            Titre affiché en haut de la galerie. Emoji acceptés 🎉💍
-          </p>
-          <input
-            type="text"
-            value={appTitle}
-            onChange={(e) => setAppTitle(e.target.value)}
-            maxLength={100}
-            placeholder="Notre Mariage 💍"
-            className="w-full border-2 rounded-lg px-4 py-2.5 text-sm outline-none mb-3"
-            style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem' }}
-          />
-          <p className="text-xs mb-3" style={{ color: '#8A7F72' }}>
-            Aperçu : <span style={{ fontFamily: 'Playfair Display, serif', color: '#2C2C2C' }}>{appTitle || '…'}</span>
-          </p>
-          <button
-            onClick={saveTitle}
-            disabled={savingTitle || !appTitle.trim()}
-            className="px-6 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-            style={{ background: '#C9A84C' }}
-          >
-            {savingTitle ? 'Sauvegarde…' : 'Sauvegarder'}
-          </button>
-          {titleSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Titre mis à jour pour tous les invités.</p>}
-        </section>
-
-        {/* QR Code */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>📱 QR Code galerie</h2>
-          <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>Scannez pour accéder à la galerie — {appUrl}</p>
-          <div id="qr-canvas" className="flex justify-center mb-4">
-            <div className="p-4 bg-white border-2 rounded-2xl" style={{ borderColor: '#C9A84C40' }}>
-              <QRCodeCanvas value={appUrl} size={300} bgColor="#FFFFFF" fgColor="#2C2C2C" level="H" />
-            </div>
-          </div>
-          <button
-            onClick={downloadQrCode}
-            className="w-full py-3 rounded-lg border-2 font-semibold text-sm"
-            style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-          >
-            ⬇️ Télécharger PNG
-          </button>
-        </section>
-
-        </>}
-
-        {/* ── Onglet Logs ── */}
-        {activeTab === 'logs' && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold" style={{ fontFamily: 'Playfair Display, serif' }}>🪵 Logs applicatifs</h2>
-                <p className="text-xs mt-0.5" style={{ color: '#8A7F72' }}>Erreurs et événements capturés en temps réel</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={fetchLogs}
-                  className="text-xs px-3 py-1.5 rounded-lg border font-medium"
-                  style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-                >
-                  ↻ Rafraîchir
-                </button>
-                <button
-                  onClick={clearAllLogs}
-                  disabled={clearingLogs || logs.length === 0}
-                  className="text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-40"
-                  style={{ borderColor: '#dc2626', color: '#dc2626' }}
-                >
-                  🗑 Tout effacer
-                </button>
-              </div>
-            </div>
-
-            {/* Filtres */}
-            <div className="flex gap-2 mb-4">
-              {['all', 'error', 'warn', 'info'].map((f) => {
-                const counts = { all: logs.length, error: logs.filter(l=>l.level==='error').length, warn: logs.filter(l=>l.level==='warn').length, info: logs.filter(l=>l.level==='info').length }
-                return (
-                  <button
-                    key={f}
-                    onClick={() => setLogsFilter(f)}
-                    className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
-                    style={{
-                      background: logsFilter === f ? (f==='error'?'#dc2626':f==='warn'?'#f59e0b':f==='info'?'#3b82f6':'#C9A84C') : '#C9A84C18',
-                      color: logsFilter === f ? '#fff' : '#8A7F72',
-                    }}
-                  >
-                    {f === 'all' ? 'Tous' : f} ({counts[f]})
-                  </button>
-                )
-              })}
-            </div>
-
-            {logsLoading ? (
-              <div className="text-center py-8 text-sm" style={{ color: '#8A7F72' }}>Chargement…</div>
-            ) : logs.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-4xl mb-3">✅</p>
-                <p className="text-sm" style={{ color: '#8A7F72' }}>Aucun log pour l'instant.</p>
-              </div>
+            ) : media.length === 0 ? (
+              <p className="text-sm py-4" style={{ color: '#8A7F72' }}>Aucun média pour l'instant.</p>
             ) : (
-              <div className="space-y-2">
-                {logs
-                  .filter(l => logsFilter === 'all' || l.level === logsFilter)
-                  .map((log) => (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {media.map((m) => {
+                  const isSelected = selectedIds.has(m.id)
+                  return (
                     <div
-                      key={log.id}
-                      className="bg-white rounded-xl p-3 border text-xs font-mono"
-                      style={{
-                        borderColor: log.level==='error'?'#fca5a5':log.level==='warn'?'#fcd34d':'#bfdbfe',
-                        background: log.level==='error'?'#fff5f5':log.level==='warn'?'#fffbeb':'#f0f9ff',
-                      }}
+                      key={m.id}
+                      className="relative rounded-lg overflow-hidden bg-white shadow-sm border-2 transition-colors"
+                      style={{ borderColor: isSelected ? '#ef4444' : '#f3f4f6' }}
+                      onClick={() => selectionMode && toggleSelect(m.id)}
                     >
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold uppercase" style={{ color: log.level==='error'?'#dc2626':log.level==='warn'?'#d97706':'#2563eb' }}>
-                            {log.level}
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: '#00000010', color: '#2C2C2C' }}>
-                            {log.context}
-                          </span>
-                        </div>
-                        <span style={{ color: '#8A7F72', flexShrink: 0 }}>
-                          {new Date(log.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' })}
+                      <div className="aspect-square relative overflow-hidden bg-gray-100">
+                        {m.type === 'video' ? (
+                          <video src={m.public_url} className="w-full h-full object-cover" preload="metadata" muted />
+                        ) : (
+                          <img src={m.public_url} alt={m.pseudo} className="w-full h-full object-cover" loading="lazy" />
+                        )}
+                        <span className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 rounded font-medium" style={{ background: m.type === 'video' ? '#2C2C2C' : '#C9A84C', color: '#fff' }}>
+                          {m.type === 'video' ? `▶ ${m.duration_seconds || '?'}s` : '📷'}
                         </span>
+                        {selectionMode ? (
+                          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center" style={{ background: isSelected ? '#ef4444' : '#fff', borderColor: isSelected ? '#ef4444' : '#ccc' }}>
+                            {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                          </div>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); deleteMedia(m) }} className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center shadow-md">×</button>
+                        )}
                       </div>
-                      <p className="text-sm mb-1" style={{ color: '#1a1a1a', wordBreak: 'break-word' }}>{log.message}</p>
-                      {log.metadata && (
-                        <details className="mt-1">
-                          <summary className="cursor-pointer text-xs" style={{ color: '#8A7F72' }}>Détails</summary>
-                          <pre className="mt-1 text-xs overflow-x-auto p-2 rounded" style={{ background: '#00000008', color: '#374151' }}>
-                            {JSON.stringify(log.metadata, null, 2)}
-                          </pre>
-                        </details>
-                      )}
+                      <div className="px-2 py-1.5">
+                        <p className="text-xs font-medium truncate" style={{ color: '#2C2C2C' }}>{m.pseudo || 'Anonyme'}</p>
+                        <p className="text-xs" style={{ color: '#8A7F72' }}>{new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
                     </div>
-                  ))}
+                  )
+                })}
               </div>
             )}
           </section>
         )}
 
-      </div>
-    </div>
-  )
-}
+        {/* ── Paramètres ── */}
+        {activeTab === 'parametres' && (
+          <div className="space-y-6">
+            {/* Téléchargement */}
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>⬇️ Paramètres téléchargement</h2>
+              <div className="space-y-3">
+                {[
+                  { value: 'open', icon: '🟢', label: 'Mode soirée', desc: 'Téléchargement libre, sans code' },
+                  { value: 'protected', icon: '🔒', label: 'Mode post-soirée', desc: 'Code requis pour télécharger' },
+                  { value: 'disabled', icon: '⛔', label: 'Désactivé', desc: 'Téléchargement impossible' },
+                ].map((opt) => (
+                  <label key={opt.value} className="flex items-start gap-3 p-3 rounded-xl cursor-pointer border-2 transition-colors"
+                    style={{ borderColor: downloadMode === opt.value ? '#C9A84C' : '#f0ece6', background: downloadMode === opt.value ? '#C9A84C08' : 'transparent' }}
+                  >
+                    <input type="radio" name="download_mode" value={opt.value} checked={downloadMode === opt.value} onChange={(e) => setDownloadMode(e.target.value)} className="mt-0.5" style={{ accentColor: '#C9A84C' }} />
+                    <div>
+                      <p className="font-medium text-sm" style={{ color: '#2C2C2C' }}>{opt.icon} {opt.label}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#8A7F72' }}>{opt.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <button onClick={saveDownloadMode} disabled={savingMode} className="mt-4 px-6 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50" style={{ background: '#C9A84C' }}>
+                {savingMode ? 'Sauvegarde…' : 'Sauvegarder'}
+              </button>
+              {saveSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Paramètre sauvegardé.</p>}
+            </section>
 
-function DiskWidget({ label, disk, thresholdWarn, thresholdCrit, critLabel }) {
-  if (!disk) return null
-  const isWarn = disk.percent_used >= thresholdWarn && disk.percent_used < thresholdCrit
-  const isCrit = disk.percent_used >= thresholdCrit
-  const barColor = isCrit ? '#ef4444' : isWarn ? '#f97316' : '#C9A84C'
+            {/* Code */}
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>🔒 Code post-soirée</h2>
+              <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>Code demandé aux invités pour télécharger en mode protégé.</p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input type="text" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Nouveau code…" maxLength={50}
+                  className="flex-1 border-2 rounded-lg px-4 py-2.5 text-sm outline-none"
+                  style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'monospace', fontSize: '1rem' }}
+                />
+                <button onClick={saveDownloadCode} disabled={savingCode || !newCode.trim() || newCode === downloadCode}
+                  className="px-5 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+                  style={{ background: '#C9A84C' }}
+                >
+                  {savingCode ? '…' : 'Sauvegarder'}
+                </button>
+              </div>
+              {downloadCode && <p className="mt-2 text-xs" style={{ color: '#8A7F72' }}>Code actuel : <span className="font-mono font-semibold" style={{ color: '#2C2C2C' }}>{downloadCode}</span></p>}
+              {codeSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Code mis à jour.</p>}
+            </section>
 
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <span className="text-sm font-medium" style={{ color: '#2C2C2C' }}>{label}</span>
-        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: disk.active ? '#22c55e20' : '#8A7F7220', color: disk.active ? '#16a34a' : '#8A7F72' }}>
-          {disk.active ? '● Actif' : '● Standby'}
-        </span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-        <div className="h-3 rounded-full transition-all" style={{ width: `${disk.percent_used}%`, background: barColor }} />
-      </div>
-      <div className="flex justify-between text-xs" style={{ color: '#8A7F72' }}>
-        <span>{disk.used_gb.toFixed(1)} Go utilisés</span>
-        <span>{disk.available_gb.toFixed(1)} Go disponibles / {disk.total_gb.toFixed(1)} Go</span>
-      </div>
-      {isCrit && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-600 text-xs font-medium">🔴 {critLabel}</div>}
-      {isWarn && !isCrit && <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-orange-600 text-xs font-medium">🟠 Espace bientôt insuffisant ({disk.percent_used}% utilisé)</div>}
-    </div>
-  )
-}
+            {/* Titre */}
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>✏️ Personnalisation</h2>
+              <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>Titre affiché en haut de la galerie. Emoji acceptés 🎉💍</p>
+              <input type="text" value={appTitle} onChange={(e) => setAppTitle(e.target.value)} maxLength={100} placeholder="Notre Mariage 💍"
+                className="w-full border-2 rounded-lg px-4 py-2.5 text-sm outline-none mb-3"
+                style={{ borderColor: '#C9A84C60', color: '#2C2C2C', fontFamily: 'Playfair Display, serif', fontSize: '1.1rem' }}
+              />
+              <button onClick={saveTitle} disabled={savingTitle || !appTitle.trim()} className="px-6 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-50" style={{ background: '#C9A84C' }}>
+                {savingTitle ? 'Sauvegarde…' : 'Sauvegarder'}
+              </button>
+              {titleSuccess && <p className="mt-2 text-green-600 text-sm font-medium">✓ Titre mis à jour pour tous les invités.</p>}
+            </section>
 
-function InfoCard({ label, value }) {
-  return (
-    <div className="rounded-xl p-3 border" style={{ borderColor: '#C9A84C30', background: '#C9A84C08' }}>
-      <p className="text-xs font-medium mb-1" style={{ color: '#8A7F72' }}>{label}</p>
-      <p className="text-lg font-bold" style={{ color: '#2C2C2C' }}>{value}</p>
+            {/* QR Code */}
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>📱 QR Code galerie</h2>
+              <p className="text-sm mb-4" style={{ color: '#8A7F72' }}>Scannez pour accéder à la galerie — {appUrl}</p>
+              <div id="qr-canvas" className="flex justify-center mb-4">
+                <div className="p-4 bg-white border-2 rounded-2xl" style={{ borderColor: '#C9A84C40' }}>
+                  <QRCodeCanvas value={appUrl} size={300} bgColor="#FFFFFF" fgColor="#2C2C2C" level="H" />
+                </div>
+              </div>
+              <button onClick={downloadQrCode} className="w-full py-3 rounded-lg border-2 font-semibold text-sm" style={{ borderColor: '#C9A84C', color: '#C9A84C' }}>
+                ⬇️ Télécharger PNG
+              </button>
+            </section>
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }
