@@ -1,9 +1,8 @@
-// Upload vidéo super admin
-// Si VITE_WORKER_URL est défini → upload via Cloudflare Worker (PoP local → R2 interne) = rapide
-// Sinon → PUT presigned R2 direct (fallback, plus lent selon la route réseau)
+// Upload vidéo super admin via Cloudflare Worker
+// Le Worker tourne au PoP CF le plus proche (Paris/Frankfurt) → stream direct vers R2 interne
 
-const WORKER_URL = import.meta.env.VITE_WORKER_URL
-const WORKER_SECRET = import.meta.env.VITE_WORKER_SECRET
+const WORKER_URL = 'https://galerie-upload.galerie-mariage.workers.dev'
+const WORKER_SECRET = 'a0518ea8a6ba3109da06488560e5561c77f9d11d53b63209e4c98691b57008aa'
 
 export async function adminVideoUpload(file, contentType, { onProgress, onPhase, onEta } = {}) {
   if (WORKER_URL && WORKER_SECRET) {
