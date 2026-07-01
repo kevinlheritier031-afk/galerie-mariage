@@ -33,7 +33,16 @@ export default function UploadQueue({ jobs, onDismissError }) {
               <StatusBadge job={job} onDismiss={() => onDismissError(job.id)} />
             </div>
 
-            {job.status === 'uploading' && (
+            {job.status === 'uploading' && job.phase === 'presign' && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                  <div className="h-1 rounded-full animate-pulse" style={{ width: '100%', background: '#C9A84C40' }} />
+                </div>
+                <span className="text-xs shrink-0" style={{ color: '#8A7F72' }}>Préparation…</span>
+              </div>
+            )}
+
+            {job.status === 'uploading' && job.phase !== 'presign' && (
               <div>
                 <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
                   <div

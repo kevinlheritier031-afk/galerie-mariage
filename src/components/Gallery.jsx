@@ -81,7 +81,9 @@ export default function Gallery() {
             lastRef.time = now
             lastRef.loaded = loaded
           }
-          patchJob(jobId, { progress: Math.min(95, Math.round((loaded / total) * 95)), speed })
+          patchJob(jobId, { phase: 'uploading', progress: Math.min(95, Math.round((loaded / total) * 95)), speed })
+        }, (phase) => {
+          patchJob(jobId, { phase })
         })
       } catch (err) {
         const short = err.message?.split('?')[0].slice(0, 120) || 'Erreur inconnue'
