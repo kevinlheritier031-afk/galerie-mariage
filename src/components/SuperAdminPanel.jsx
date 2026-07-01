@@ -476,7 +476,7 @@ function SuperDashboard({ onLogout }) {
               <p className="text-xs text-zinc-500">
                 Taille : <span className="text-zinc-300 font-mono">{(videoFile.size / 1024 / 1024).toFixed(0)} Mo</span>
                 <span className="mx-2 text-zinc-600">·</span>
-                Mode : <span className="text-zinc-300 font-mono">PUT direct</span>
+                Mode : <span className="text-zinc-300 font-mono">{import.meta.env.VITE_WORKER_URL ? '⚡ CF Worker (rapide)' : 'PUT direct'}</span>
               </p>
             )}
 
