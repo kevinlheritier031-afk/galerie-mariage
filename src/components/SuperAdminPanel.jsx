@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../lib/supabase.js'
-import { multipartUpload } from '../lib/multipartUpload.js'
+import { adminVideoUpload } from '../lib/adminVideoUpload.js'
 
 const TOKEN_KEY = 'superadmin_token'
 
@@ -124,6 +124,7 @@ function SuperDashboard({ onLogout }) {
   const [videoPhase, setVideoPhase] = useState(null)
   const [videoProgress, setVideoProgress] = useState(0)
   const [videoSpeed, setVideoSpeed] = useState(0)
+  const [videoEta, setVideoEta] = useState(null)
   const [videoError, setVideoError] = useState('')
   const videoSpeedRef = useRef({ time: Date.now(), loaded: 0 })
 
@@ -264,24 +265,28 @@ function SuperDashboard({ onLogout }) {
     setVideoPhase('presign')
     setVideoProgress(0)
     setVideoSpeed(0)
+    setVideoEta(null)
     setVideoError('')
     videoSpeedRef.current = { time: Date.now(), loaded: 0 }
 
     try {
-      const { key, publicUrl } = await multipartUpload(
+      const { key, publicUrl } = await adminVideoUpload(
         videoFile,
         videoFile.type || 'video/mp4',
-        (loaded, total) => {
-          const now = Date.now()
-          const ref = videoSpeedRef.current
-          const elapsed = (now - ref.time) / 1000
-          if (elapsed > 0.5) {
-            setVideoSpeed((loaded - ref.loaded) / elapsed / (1024 * 1024))
-            videoSpeedRef.current = { time: now, loaded }
-          }
-          setVideoProgress(Math.min(95, Math.round((loaded / total) * 95)))
+        {
+          onProgress: (loaded, total) => {
+            const now = Date.now()
+            const ref = videoSpeedRef.current
+            const elapsed = (now - ref.time) / 1000
+            if (elapsed > 0.5) {
+              setVideoSpeed((loaded - ref.loaded) / elapsed / (1024 * 1024))
+              videoSpeedRef.current = { time: now, loaded }
+            }
+            setVideoProgress(Math.min(95, Math.round((loaded / total) * 95)))
+          },
+          onPhase: (phase) => setVideoPhase(phase),
+          onEta: (seconds) => setVideoEta(seconds),
         },
-        (phase) => setVideoPhase(phase),
       )
 
       setVideoPhase('saving')
@@ -467,11 +472,25 @@ function SuperDashboard({ onLogout }) {
               />
             </div>
 
+            {videoFile && !videoPhase && (
+              <p className="text-xs text-zinc-500">
+                Mode : <span className="text-zinc-300 font-mono">{videoFile.size >= 100 * 1024 * 1024 ? `multipart parallèle (${Math.ceil(videoFile.size / (20 * 1024 * 1024))} chunks × 6 streams)` : 'PUT direct'}</span>
+              </p>
+            )}
+
             {videoPhase && videoPhase !== 'error' && videoPhase !== 'done' && (
               <div>
                 <div className="flex justify-between text-xs mb-1 text-zinc-400">
-                  <span>{videoPhase === 'presign' ? 'Préparation…' : videoPhase === 'uploading' ? `Envoi… ${videoProgress}%` : 'Enregistrement…'}</span>
-                  {videoSpeed > 0 && <span>{videoSpeed < 1 ? `${(videoSpeed * 1024).toFixed(0)} Ko/s` : `${videoSpeed.toFixed(1)} Mo/s`}</span>}
+                  <span>
+                    {videoPhase === 'presign' && 'Préparation…'}
+                    {videoPhase === 'uploading' && `Envoi… ${videoProgress}%`}
+                    {videoPhase === 'finalizing' && 'Finalisation…'}
+                    {videoPhase === 'saving' && 'Enregistrement…'}
+                  </span>
+                  <span className="flex gap-2">
+                    {videoSpeed > 0 && <span>{videoSpeed < 1 ? `${(videoSpeed * 1024).toFixed(0)} Ko/s` : `${videoSpeed.toFixed(1)} Mo/s`}</span>}
+                    {videoEta > 0 && <span>~{videoEta >= 60 ? `${Math.floor(videoEta / 60)}m${videoEta % 60}s` : `${videoEta}s`}</span>}
+                  </span>
                 </div>
                 <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
                   <div className={`h-2 rounded-full transition-all ${videoPhase === 'presign' ? 'animate-pulse' : ''}`}
