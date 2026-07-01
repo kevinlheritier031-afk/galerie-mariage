@@ -15,7 +15,6 @@ import { multipartUpload } from '../lib/multipartUpload.js'
 const TABS = [
   { key: 'all', label: 'Tout' },
   { key: 'photo', label: 'Photos' },
-  { key: 'video', label: 'Vidéos' },
 ]
 
 export default function Gallery() {
