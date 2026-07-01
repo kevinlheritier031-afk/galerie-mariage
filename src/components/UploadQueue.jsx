@@ -28,7 +28,7 @@ export default function UploadQueue({ jobs, onDismissError }) {
           <div key={job.id} className="px-4 py-2.5">
             <div className="flex items-center justify-between mb-1 gap-2">
               <p className="text-xs truncate font-medium flex-1" style={{ color: '#2C2C2C' }}>
-                {job.type === 'video' ? '🎥' : '📷'} {job.name}
+                {job.type === 'video' ? '🎥' : '📷'}
               </p>
               <StatusBadge job={job} onDismiss={() => onDismissError(job.id)} />
             </div>
