@@ -36,10 +36,10 @@ export async function multipartUpload(file, contentType, onProgress) {
     }
 
     // 3. Finalise l'upload
-    const completeRes = await fetch('/api/complete-multipart', {
+    const completeRes = await fetch('/api/multipart-finalize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uploadId, key, parts: completedParts }),
+      body: JSON.stringify({ action: 'complete', uploadId, key, parts: completedParts }),
     })
     if (!completeRes.ok) throw new Error(`Complete multipart HTTP ${completeRes.status}`)
 
@@ -47,10 +47,10 @@ export async function multipartUpload(file, contentType, onProgress) {
 
   } catch (err) {
     // Annule les parts partielles sur R2
-    fetch('/api/abort-multipart', {
+    fetch('/api/multipart-finalize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uploadId, key }),
+      body: JSON.stringify({ action: 'abort', uploadId, key }),
     }).catch(() => {})
     throw err
   }
