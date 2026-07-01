@@ -5,7 +5,7 @@ import { CreateMultipartUploadCommand, UploadPartCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from './_lib/r2.js'
 
-const CHUNK_SIZE = 10 * 1024 * 1024 // 10 Mo
+const CHUNK_SIZE = 20 * 1024 * 1024 // 20 Mo
 
 // Accepte tout type video/* plutôt qu'une liste figée (évite les refus sur formats téléphone rares)
 function isVideoType(ct) {

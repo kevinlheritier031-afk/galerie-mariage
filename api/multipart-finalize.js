@@ -20,7 +20,7 @@ export default async function handler(req, res) {
         Key: key,
         UploadId: uploadId,
         MultipartUpload: {
-          Parts: parts.map(({ partNumber, etag }) => ({
+          Parts: [...parts].sort((a, b) => a.partNumber - b.partNumber).map(({ partNumber, etag }) => ({
             PartNumber: partNumber,
             ETag: etag,
           })),

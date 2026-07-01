@@ -16,30 +16,43 @@ export async function multipartUpload(file, contentType, onProgress) {
   if (!initRes.ok) throw new Error(`Presign multipart HTTP ${initRes.status}`)
   const { uploadId, key, publicUrl, parts, chunkSize } = await initRes.json()
 
-  let bytesUploaded = 0
+  const bytesPerPart = new Array(parts.length).fill(0)
   const completedParts = []
+  const CONCURRENCY = 6
+
+  function totalUploaded() {
+    return bytesPerPart.reduce((a, b) => a + b, 0)
+  }
 
   try {
-    // 2. Upload chaque part
-    for (const { partNumber, url } of parts) {
-      const start = (partNumber - 1) * chunkSize
-      const end = Math.min(start + chunkSize, file.size)
-      const chunk = file.slice(start, end)
+    // 2. Upload les parts en parallèle (4 simultanées max)
+    const queue = [...parts]
+    async function worker() {
+      while (queue.length > 0) {
+        const { partNumber, url } = queue.shift()
+        const idx = partNumber - 1
+        const start = idx * chunkSize
+        const end = Math.min(start + chunkSize, file.size)
+        const chunk = file.slice(start, end)
 
-      const etag = await uploadPart(url, chunk, contentType, (loaded) => {
-        onProgress(bytesUploaded + loaded, file.size)
-      })
+        const etag = await uploadPart(url, chunk, contentType, (loaded) => {
+          bytesPerPart[idx] = loaded
+          onProgress(totalUploaded(), file.size)
+        })
 
-      bytesUploaded += chunk.size
-      completedParts.push({ partNumber, etag })
-      onProgress(bytesUploaded, file.size)
+        bytesPerPart[idx] = chunk.size
+        completedParts.push({ partNumber, etag })
+        onProgress(totalUploaded(), file.size)
+      }
     }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker))
 
     // 3. Finalise l'upload
     const completeRes = await fetch('/api/multipart-finalize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'complete', uploadId, key, parts: completedParts }),
+      body: JSON.stringify({ action: 'complete', uploadId, key, parts: completedParts.sort((a, b) => a.partNumber - b.partNumber) }),
     })
     if (!completeRes.ok) throw new Error(`Complete multipart HTTP ${completeRes.status}`)
 
