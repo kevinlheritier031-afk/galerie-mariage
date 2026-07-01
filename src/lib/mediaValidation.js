@@ -1,15 +1,9 @@
 // Validation des fichiers avant upload
 // Photos : vérification du type MIME uniquement
-// Vidéos : vérification durée et taille via un élément video temporaire
+// Vidéos : vérification durée uniquement — pas de limite de taille (R2 gère jusqu'à 5 Go)
 
-// Charge les limites depuis les variables d'environnement
 const MAX_VIDEO_DURATION = 180
-const MAX_VIDEO_SIZE_MB = parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE_MB || '100', 10)
 
-/**
- * Valide une photo — vérifie uniquement le type MIME
- * Retourne { valid: true } ou { valid: false, error: string }
- */
 export function validatePhoto(file) {
   if (file.type.startsWith('video/')) {
     return { valid: false, error: 'Les vidéos ne sont pas acceptées, seulement les photos.' }
@@ -20,34 +14,15 @@ export function validatePhoto(file) {
   return { valid: true }
 }
 
-/**
- * Valide une vidéo — vérifie la taille et la durée
- * La durée est lue en chargeant le fichier dans un élément video temporaire invisible
- * Retourne une Promise<{ valid: true, duration: number } | { valid: false, error: string }>
- */
 export function validateVideo(file) {
   return new Promise((resolve) => {
-    // Vérification taille d'abord (synchrone, pas besoin de charger le fichier)
-    const sizeMB = file.size / (1024 * 1024)
-    if (sizeMB > MAX_VIDEO_SIZE_MB) {
-      resolve({
-        valid: false,
-        error: `La vidéo dépasse la limite de ${MAX_VIDEO_SIZE_MB} Mo (taille actuelle : ${sizeMB.toFixed(1)} Mo).`,
-      })
-      return
-    }
-
-    // Vérification durée via un élément video temporaire
     const video = document.createElement('video')
     video.preload = 'metadata'
-    // Crée une URL temporaire en mémoire pour lire les métadonnées sans uploader
     const objectUrl = URL.createObjectURL(file)
 
     video.onloadedmetadata = () => {
-      // Libère la mémoire immédiatement après lecture des métadonnées
       URL.revokeObjectURL(objectUrl)
       const duration = Math.round(video.duration)
-
       if (duration > MAX_VIDEO_DURATION) {
         resolve({
           valid: false,
@@ -55,7 +30,6 @@ export function validateVideo(file) {
         })
         return
       }
-
       resolve({ valid: true, duration })
     }
 
