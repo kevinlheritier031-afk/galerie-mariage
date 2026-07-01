@@ -474,7 +474,9 @@ function SuperDashboard({ onLogout }) {
 
             {videoFile && !videoPhase && (
               <p className="text-xs text-zinc-500">
-                Mode : <span className="text-zinc-300 font-mono">{videoFile.size >= 100 * 1024 * 1024 ? `multipart parallèle (${Math.ceil(videoFile.size / (20 * 1024 * 1024))} chunks × 6 streams)` : 'PUT direct'}</span>
+                Taille : <span className="text-zinc-300 font-mono">{(videoFile.size / 1024 / 1024).toFixed(0)} Mo</span>
+                <span className="mx-2 text-zinc-600">·</span>
+                Mode : <span className="text-zinc-300 font-mono">PUT direct</span>
               </p>
             )}
 
@@ -484,7 +486,6 @@ function SuperDashboard({ onLogout }) {
                   <span>
                     {videoPhase === 'presign' && 'Préparation…'}
                     {videoPhase === 'uploading' && `Envoi… ${videoProgress}%`}
-                    {videoPhase === 'finalizing' && 'Finalisation…'}
                     {videoPhase === 'saving' && 'Enregistrement…'}
                   </span>
                   <span className="flex gap-2">
