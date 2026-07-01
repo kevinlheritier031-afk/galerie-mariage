@@ -8,6 +8,7 @@ import { useMedia } from '../hooks/useMedia.js'
 import { useSettings } from '../hooks/useSettings.js'
 import { supabase } from '../lib/supabase.js'
 import { downloadSingle } from '../lib/downloadHelpers.js'
+import { logger } from '../lib/logger.js'
 
 const TABS = [
   { key: 'all', label: 'Tout' },
@@ -67,12 +68,19 @@ export default function Gallery() {
 
     if (actualType === 'video') {
       // ── Vidéo → upload direct vers Cloudflare R2 via presigned URL ──
-      const presignRes = await fetch('/api/presign-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: fileObj.raw.name, contentType }),
-      })
-      if (!presignRes.ok) throw new Error("Impossible de préparer l'upload vidéo.")
+      let presignRes
+      try {
+        presignRes = await fetch('/api/presign-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: fileObj.raw.name, contentType }),
+        })
+        if (!presignRes.ok) throw new Error(`Presign HTTP ${presignRes.status}`)
+      } catch (err) {
+        logger.error('upload:presign', err.message, { filename: fileObj.raw.name, contentType })
+        throw new Error("Impossible de préparer l'upload vidéo.")
+      }
+
       const { uploadUrl, key, publicUrl } = await presignRes.json()
 
       await new Promise((resolve, reject) => {
@@ -93,10 +101,17 @@ export default function Gallery() {
           }
         }
         xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Erreur R2 ${xhr.status} : ${xhr.responseText}`))
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve()
+          } else {
+            logger.error('upload:r2-put', `R2 PUT ${xhr.status}`, { status: xhr.status, response: xhr.responseText.slice(0, 500), filename: fileObj.raw.name })
+            reject(new Error(`Erreur R2 ${xhr.status}`))
+          }
         }
-        xhr.onerror = () => reject(new Error('Erreur réseau.'))
+        xhr.onerror = () => {
+          logger.error('upload:r2-network', 'Erreur réseau PUT R2', { filename: fileObj.raw.name, contentType, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
+          reject(new Error('Erreur réseau.'))
+        }
         xhr.send(fileObj.raw)
       })
 
@@ -110,7 +125,12 @@ export default function Gallery() {
         duration_seconds: fileObj.duration || null,
         source: 'r2',
       })
-      if (dbError) throw dbError
+      if (dbError) {
+        logger.error('upload:supabase-insert', dbError.message, { key, type: 'video' })
+        throw dbError
+      }
+
+      logger.info('upload:success', 'Vidéo uploadée', { key, sizeMB: (fileObj.raw.size / 1048576).toFixed(1), duration: fileObj.duration })
 
     } else {
       // ── Photo → upload vers Supabase Storage (inchangé) ──
@@ -141,10 +161,17 @@ export default function Gallery() {
           }
         }
         xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Erreur serveur ${xhr.status} : ${xhr.responseText}`))
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve()
+          } else {
+            logger.error('upload:storage-put', `Storage PUT ${xhr.status}`, { status: xhr.status, response: xhr.responseText.slice(0, 500) })
+            reject(new Error(`Erreur serveur ${xhr.status}`))
+          }
         }
-        xhr.onerror = () => reject(new Error('Erreur réseau.'))
+        xhr.onerror = () => {
+          logger.error('upload:storage-network', 'Erreur réseau PUT Storage', { filename: fileObj.raw.name, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
+          reject(new Error('Erreur réseau.'))
+        }
         xhr.send(fileObj.raw)
       })
 
@@ -161,7 +188,12 @@ export default function Gallery() {
         duration_seconds: null,
         source: 'supabase',
       })
-      if (dbError) throw dbError
+      if (dbError) {
+        logger.error('upload:supabase-insert', dbError.message, { fileName, type: 'photo' })
+        throw dbError
+      }
+
+      logger.info('upload:success', 'Photo uploadée', { fileName, sizeMB: (fileObj.raw.size / 1048576).toFixed(1) })
     }
   }
 

@@ -109,7 +109,11 @@ function AdminDashboard({ onLogout }) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deletingBulk, setDeletingBulk] = useState(false)
-  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres'
+  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres' | 'logs'
+  const [logs, setLogs] = useState([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [logsFilter, setLogsFilter] = useState('all') // 'all' | 'error' | 'warn' | 'info'
+  const [clearingLogs, setClearingLogs] = useState(false)
 
   const photoCount = media.filter((m) => m.type === 'photo').length
   const videoCount = media.filter((m) => m.type === 'video').length
@@ -249,6 +253,25 @@ function AdminDashboard({ onLogout }) {
     }
   }
 
+  async function fetchLogs() {
+    setLogsLoading(true)
+    const res = await fetch('/api/admin/logs', { headers: authHeaders() })
+    if (res.ok) setLogs(await res.json())
+    setLogsLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'logs') fetchLogs()
+  }, [activeTab])
+
+  async function clearAllLogs() {
+    if (!window.confirm('Supprimer tous les logs ?')) return
+    setClearingLogs(true)
+    await fetch('/api/admin/logs', { method: 'DELETE', headers: authHeaders() })
+    setLogs([])
+    setClearingLogs(false)
+  }
+
   function downloadQrCode() {
     const canvas = document.querySelector('#qr-canvas canvas')
     if (!canvas) return
@@ -279,6 +302,7 @@ function AdminDashboard({ onLogout }) {
             {[
               { key: 'medias', label: `📸 Médias`, badge: media.length },
               { key: 'parametres', label: '⚙️ Paramètres' },
+              { key: 'logs', label: '🪵 Logs', badge: logs.filter(l => l.level === 'error').length || undefined },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -579,6 +603,102 @@ function AdminDashboard({ onLogout }) {
         </section>
 
         </>}
+
+        {/* ── Onglet Logs ── */}
+        {activeTab === 'logs' && (
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold" style={{ fontFamily: 'Playfair Display, serif' }}>🪵 Logs applicatifs</h2>
+                <p className="text-xs mt-0.5" style={{ color: '#8A7F72' }}>Erreurs et événements capturés en temps réel</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchLogs}
+                  className="text-xs px-3 py-1.5 rounded-lg border font-medium"
+                  style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
+                >
+                  ↻ Rafraîchir
+                </button>
+                <button
+                  onClick={clearAllLogs}
+                  disabled={clearingLogs || logs.length === 0}
+                  className="text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-40"
+                  style={{ borderColor: '#dc2626', color: '#dc2626' }}
+                >
+                  🗑 Tout effacer
+                </button>
+              </div>
+            </div>
+
+            {/* Filtres */}
+            <div className="flex gap-2 mb-4">
+              {['all', 'error', 'warn', 'info'].map((f) => {
+                const counts = { all: logs.length, error: logs.filter(l=>l.level==='error').length, warn: logs.filter(l=>l.level==='warn').length, info: logs.filter(l=>l.level==='info').length }
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setLogsFilter(f)}
+                    className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                    style={{
+                      background: logsFilter === f ? (f==='error'?'#dc2626':f==='warn'?'#f59e0b':f==='info'?'#3b82f6':'#C9A84C') : '#C9A84C18',
+                      color: logsFilter === f ? '#fff' : '#8A7F72',
+                    }}
+                  >
+                    {f === 'all' ? 'Tous' : f} ({counts[f]})
+                  </button>
+                )
+              })}
+            </div>
+
+            {logsLoading ? (
+              <div className="text-center py-8 text-sm" style={{ color: '#8A7F72' }}>Chargement…</div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-4xl mb-3">✅</p>
+                <p className="text-sm" style={{ color: '#8A7F72' }}>Aucun log pour l'instant.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {logs
+                  .filter(l => logsFilter === 'all' || l.level === logsFilter)
+                  .map((log) => (
+                    <div
+                      key={log.id}
+                      className="bg-white rounded-xl p-3 border text-xs font-mono"
+                      style={{
+                        borderColor: log.level==='error'?'#fca5a5':log.level==='warn'?'#fcd34d':'#bfdbfe',
+                        background: log.level==='error'?'#fff5f5':log.level==='warn'?'#fffbeb':'#f0f9ff',
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold uppercase" style={{ color: log.level==='error'?'#dc2626':log.level==='warn'?'#d97706':'#2563eb' }}>
+                            {log.level}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: '#00000010', color: '#2C2C2C' }}>
+                            {log.context}
+                          </span>
+                        </div>
+                        <span style={{ color: '#8A7F72', flexShrink: 0 }}>
+                          {new Date(log.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-sm mb-1" style={{ color: '#1a1a1a', wordBreak: 'break-word' }}>{log.message}</p>
+                      {log.metadata && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-xs" style={{ color: '#8A7F72' }}>Détails</summary>
+                          <pre className="mt-1 text-xs overflow-x-auto p-2 rounded" style={{ background: '#00000008', color: '#374151' }}>
+                            {JSON.stringify(log.metadata, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+        )}
 
       </div>
     </div>
