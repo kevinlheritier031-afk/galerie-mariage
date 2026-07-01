@@ -31,13 +31,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
 
     for (const f of selected) {
       if (f.type.startsWith('video/')) {
-        const result = await validateVideo(f)
-        if (result.valid) {
-          valid.push({ raw: f, duration: result.duration, type: 'video' })
-          validPreviews.push(URL.createObjectURL(f))
-        } else {
-          errors.push(`${f.name} : ${result.error}`)
-        }
+        errors.push(`${f.name} : les vidéos ne sont pas acceptées pour l'instant, photos uniquement.`)
       } else {
         const result = validatePhoto(f)
         if (result.valid) {
@@ -139,7 +133,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                 {/* Option Galerie — sélection multiple */}
                 <input
                   type="file"
-                  accept="image/*,video/*"
+                  accept="image/*"
                   multiple
                   onChange={handleGalleryChange}
                   className="hidden"
@@ -155,7 +149,7 @@ export default function UploadModal({ onClose, onStartUpload }) {
                     Depuis ma galerie
                   </span>
                   <span className="text-xs text-center leading-tight" style={{ color: '#8B7355' }}>
-                    Photos & vidéos
+                    Photos uniquement
                   </span>
                 </label>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../lib/supabase.js'
+import { multipartUpload } from '../lib/multipartUpload.js'
 
 const TOKEN_KEY = 'admin_token'
 
@@ -109,7 +110,16 @@ function AdminDashboard({ onLogout }) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deletingBulk, setDeletingBulk] = useState(false)
-  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres' | 'logs'
+  const [activeTab, setActiveTab] = useState('medias') // 'medias' | 'parametres' | 'logs' | 'videos'
+
+  // État upload vidéo admin
+  const [videoFile, setVideoFile] = useState(null)
+  const [videoPseudo, setVideoPseudo] = useState('Admin')
+  const [videoPhase, setVideoPhase] = useState(null) // null | 'presign' | 'uploading' | 'saving' | 'done' | 'error'
+  const [videoProgress, setVideoProgress] = useState(0)
+  const [videoSpeed, setVideoSpeed] = useState(0)
+  const [videoError, setVideoError] = useState('')
+  const videoSpeedRef = useRef({ time: Date.now(), loaded: 0 })
   const [logs, setLogs] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsFilter, setLogsFilter] = useState('all') // 'all' | 'error' | 'warn' | 'info'
@@ -272,6 +282,50 @@ function AdminDashboard({ onLogout }) {
     setClearingLogs(false)
   }
 
+  async function handleAdminVideoUpload() {
+    if (!videoFile) return
+    setVideoPhase('presign')
+    setVideoProgress(0)
+    setVideoSpeed(0)
+    setVideoError('')
+    videoSpeedRef.current = { time: Date.now(), loaded: 0 }
+
+    try {
+      const { key, publicUrl } = await multipartUpload(
+        videoFile,
+        videoFile.type || 'video/mp4',
+        (loaded, total) => {
+          const now = Date.now()
+          const ref = videoSpeedRef.current
+          const elapsed = (now - ref.time) / 1000
+          if (elapsed > 0.5) {
+            setVideoSpeed((loaded - ref.loaded) / elapsed / (1024 * 1024))
+            videoSpeedRef.current = { time: now, loaded }
+          }
+          setVideoProgress(Math.min(95, Math.round((loaded / total) * 95)))
+        },
+        (phase) => setVideoPhase(phase),
+      )
+
+      setVideoPhase('saving')
+      const { error: dbError } = await supabase.from('media').insert({
+        pseudo: videoPseudo.trim() || 'Admin',
+        storage_path: key,
+        public_url: publicUrl,
+        type: 'video',
+        source: 'r2',
+      })
+      if (dbError) throw dbError
+
+      setVideoPhase('done')
+      setVideoProgress(100)
+      setVideoFile(null)
+    } catch (err) {
+      setVideoError(err.message || 'Erreur inconnue')
+      setVideoPhase('error')
+    }
+  }
+
   function downloadQrCode() {
     const canvas = document.querySelector('#qr-canvas canvas')
     if (!canvas) return
@@ -298,9 +352,10 @@ function AdminDashboard({ onLogout }) {
             </button>
           </div>
           {/* Onglets */}
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {[
               { key: 'medias', label: `📸 Médias`, badge: media.length },
+              { key: 'videos', label: '🎥 Upload vidéo' },
               { key: 'parametres', label: '⚙️ Paramètres' },
               { key: 'logs', label: '🪵 Logs', badge: logs.filter(l => l.level === 'error').length || undefined },
             ].map((tab) => (
@@ -440,6 +495,99 @@ function AdminDashboard({ onLogout }) {
             </div>
           )}
         </section>}
+
+        {/* ── Onglet Upload vidéo (admin dev) ── */}
+        {activeTab === 'videos' && (
+          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+            <div>
+              <h2 className="text-lg font-bold" style={{ fontFamily: 'Playfair Display, serif' }}>🎥 Upload vidéo — Admin</h2>
+              <p className="text-xs mt-1" style={{ color: '#8A7F72' }}>Module de test — non visible par les invités.</p>
+            </div>
+
+            <input
+              type="text"
+              value={videoPseudo}
+              onChange={(e) => setVideoPseudo(e.target.value)}
+              placeholder="Pseudo"
+              maxLength={50}
+              className="w-full border rounded-lg px-3 py-2.5 text-sm outline-none"
+              style={{ borderColor: '#C9A84C40' }}
+            />
+
+            <div
+              className="rounded-xl border-2 border-dashed p-6 flex flex-col items-center gap-3 cursor-pointer hover:bg-amber-50 transition-colors"
+              style={{ borderColor: '#C9A84C' }}
+              onClick={() => document.getElementById('admin-video-input').click()}
+            >
+              <span className="text-4xl">🎬</span>
+              <span className="text-sm font-semibold" style={{ color: '#2C2C2C' }}>
+                {videoFile ? videoFile.name : 'Choisir une vidéo'}
+              </span>
+              {videoFile && (
+                <span className="text-xs" style={{ color: '#8A7F72' }}>
+                  {(videoFile.size / 1024 / 1024).toFixed(1)} Mo · {videoFile.type}
+                </span>
+              )}
+              <input
+                id="admin-video-input"
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => {
+                  setVideoFile(e.target.files?.[0] || null)
+                  setVideoPhase(null)
+                  setVideoProgress(0)
+                  setVideoError('')
+                  e.target.value = ''
+                }}
+              />
+            </div>
+
+            {/* Progression */}
+            {videoPhase && videoPhase !== 'error' && videoPhase !== 'done' && (
+              <div>
+                <div className="flex justify-between text-xs mb-1" style={{ color: '#8A7F72' }}>
+                  <span>
+                    {videoPhase === 'presign' && 'Préparation…'}
+                    {videoPhase === 'uploading' && `Envoi… ${videoProgress}%`}
+                    {videoPhase === 'saving' && 'Enregistrement en base…'}
+                  </span>
+                  {videoSpeed > 0 && (
+                    <span>{videoSpeed < 1 ? `${(videoSpeed * 1024).toFixed(0)} Ko/s` : `${videoSpeed.toFixed(1)} Mo/s`}</span>
+                  )}
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-2 rounded-full transition-all ${videoPhase === 'presign' ? 'animate-pulse' : ''}`}
+                    style={{
+                      width: videoPhase === 'presign' ? '100%' : `${videoProgress}%`,
+                      background: videoPhase === 'presign' ? '#C9A84C40' : '#C9A84C',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {videoPhase === 'done' && (
+              <p className="text-green-600 text-sm font-medium">✓ Vidéo uploadée avec succès !</p>
+            )}
+            {videoPhase === 'error' && (
+              <p className="text-red-500 text-sm">{videoError}</p>
+            )}
+
+            <button
+              onClick={handleAdminVideoUpload}
+              disabled={!videoFile || (videoPhase && videoPhase !== 'done' && videoPhase !== 'error')}
+              className="w-full py-3 rounded-lg text-white font-semibold text-sm disabled:opacity-40 transition-opacity"
+              style={{ background: '#C9A84C' }}
+            >
+              {videoPhase === 'uploading' ? `Envoi… ${videoProgress}%` :
+               videoPhase === 'presign' ? 'Préparation…' :
+               videoPhase === 'saving' ? 'Finalisation…' :
+               'Uploader la vidéo'}
+            </button>
+          </section>
+        )}
 
         {/* ── Onglet Paramètres ── */}
         {activeTab === 'parametres' && <>
