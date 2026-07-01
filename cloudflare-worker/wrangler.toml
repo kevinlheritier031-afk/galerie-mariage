@@ -1,13 +1,13 @@
 name = "galerie-upload"
 main = "index.js"
 compatibility_date = "2024-09-23"
+account_id = "d42b66a19e151a0b0c9abe32b4a36ce7"
 workers_dev = true
 
 [[r2_buckets]]
 binding = "R2_BUCKET"
-# Remplace par le nom exact de ton bucket R2 (visible dans Cloudflare Dashboard > R2)
-bucket_name = "REMPLACER_PAR_TON_BUCKET_NAME"
+bucket_name = "wedding-media-videosage"
 
 [vars]
 ALLOWED_ORIGIN = "https://galerie-mariage.vercel.app"
-# R2_PUBLIC_URL sera ajouté comme secret (voir instructions)
+R2_PUBLIC_URL = "https://pub-e28e9f09b88e46fa86c7c1f5be08f792.r2.dev"

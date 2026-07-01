@@ -44,9 +44,16 @@ export default {
     const key = `${crypto.randomUUID()}.${ext}`
 
     // Stream direct vers R2 — pas de buffer en mémoire, pas de HTTP
-    await env.R2_BUCKET.put(key, request.body, {
-      httpMetadata: { contentType },
-    })
+    try {
+      await env.R2_BUCKET.put(key, request.body, {
+        httpMetadata: { contentType },
+      })
+    } catch (err) {
+      return new Response(JSON.stringify({ error: 'Échec R2', detail: err.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const publicUrl = `${env.R2_PUBLIC_URL}/${key}`
 
