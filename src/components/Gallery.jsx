@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import * as tus from 'tus-js-client'
 import MediaCard from './MediaCard.jsx'
 import Lightbox from './Lightbox.jsx'
 import UploadModal from './UploadModal.jsx'

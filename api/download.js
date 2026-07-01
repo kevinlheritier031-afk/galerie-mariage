@@ -2,6 +2,12 @@
 // Récupère le fichier depuis Supabase et le renvoie avec Content-Disposition: attachment
 // Nécessaire sur mobile (Android/iOS) où le navigateur ne sait pas ouvrir
 // un blob URL sans MIME type explicite — ça finit en "content://" ou s'ouvre dans le navigateur
+//
+// Cas spécial vidéos R2 : redirect 302 vers l'URL publique R2 avec Content-Disposition
+// Le bucket R2 étant public, pas besoin de proxyer le fichier en mémoire
+// (évite OOM/timeout sur Vercel pour les vidéos volumineuses)
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || ''
+
 export default async function handler(req, res) {
   const { url, filename } = req.query
 
@@ -11,6 +17,15 @@ export default async function handler(req, res) {
 
   if (!/^https?:\/\//i.test(url)) {
     return res.status(400).json({ error: 'URL invalide' })
+  }
+
+  // Vidéos R2 : redirect direct vers l'URL publique R2
+  // On ajoute response-content-disposition en query param (supporté par R2/S3)
+  if (R2_PUBLIC_URL && url.startsWith(R2_PUBLIC_URL)) {
+    const disposition = `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    const redirectUrl = `${url}?response-content-disposition=${encodeURIComponent(disposition)}`
+    res.setHeader('Cache-Control', 'private, no-cache')
+    return res.redirect(302, redirectUrl)
   }
 
   try {
