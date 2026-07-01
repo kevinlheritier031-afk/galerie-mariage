@@ -50,13 +50,8 @@ export default function UploadQueue({ jobs, onDismissError }) {
                     style={{ width: `${job.progress}%`, background: '#C9A84C' }}
                   />
                 </div>
-                <div className="flex justify-between mt-0.5">
+                <div className="mt-0.5">
                   <span className="text-xs" style={{ color: '#8A7F72' }}>{job.progress}%</span>
-                  {job.speed > 0 && (
-                    <span className="text-xs" style={{ color: '#8A7F72' }}>
-                      {job.speed < 1 ? `${(job.speed * 1024).toFixed(0)} Ko/s` : `${job.speed.toFixed(1)} Mo/s`}
-                    </span>
-                  )}
                 </div>
               </div>
             )}
