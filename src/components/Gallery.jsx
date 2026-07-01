@@ -84,8 +84,9 @@ export default function Gallery() {
           patchJob(jobId, { progress: Math.min(95, Math.round((loaded / total) * 95)), speed })
         })
       } catch (err) {
+        const short = err.message?.split('?')[0].slice(0, 120) || 'Erreur inconnue'
         logger.error('upload:multipart', err.message, { filename: fileObj.raw.name, contentType })
-        throw new Error("Échec upload vidéo : " + err.message)
+        throw new Error("Échec upload vidéo : " + short)
       }
 
       const { key, publicUrl } = result

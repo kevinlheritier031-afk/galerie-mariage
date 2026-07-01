@@ -14,17 +14,21 @@ export default async function handler(req, res) {
     if (!Array.isArray(parts) || parts.length === 0) {
       return res.status(400).json({ error: 'Parts manquantes.' })
     }
-    await r2.send(new CompleteMultipartUploadCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      UploadId: uploadId,
-      MultipartUpload: {
-        Parts: parts.map(({ partNumber, etag }) => ({
-          PartNumber: partNumber,
-          ETag: etag,
-        })),
-      },
-    }))
+    try {
+      await r2.send(new CompleteMultipartUploadCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: parts.map(({ partNumber, etag }) => ({
+            PartNumber: partNumber,
+            ETag: etag,
+          })),
+        },
+      }))
+    } catch (err) {
+      return res.status(500).json({ error: `CompleteMultipartUpload échoué : ${err.message}` })
+    }
     return res.status(200).json({ ok: true })
   }
 

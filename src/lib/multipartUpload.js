@@ -68,10 +68,11 @@ function uploadPart(url, chunk, contentType, onChunkProgress) {
       if (xhr.status >= 200 && xhr.status < 300) {
         const etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag')
         if (!etag) {
-          reject(new Error(`Part ${url} : ETag manquant dans la réponse`))
+          reject(new Error(`ETag manquant sur la part ${xhr.status} — vérifier la config CORS R2`))
           return
         }
-        resolve(etag.replace(/"/g, ''))
+        // Les guillemets font partie du format ETag (RFC 7232) — R2 les exige dans CompleteMultipartUpload
+        resolve(etag)
       } else {
         reject(new Error(`Part upload HTTP ${xhr.status}`))
       }

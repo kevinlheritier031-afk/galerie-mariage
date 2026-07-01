@@ -7,17 +7,17 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from './_lib/r2.js'
 
 const CHUNK_SIZE = 10 * 1024 * 1024 // 10 Mo
 
-const ALLOWED_VIDEO_TYPES = new Set([
-  'video/mp4', 'video/quicktime', 'video/x-msvideo',
-  'video/x-matroska', 'video/webm', 'video/3gpp',
-])
+// Accepte tout type video/* plutôt qu'une liste figée (évite les refus sur formats téléphone rares)
+function isVideoType(ct) {
+  return typeof ct === 'string' && ct.startsWith('video/')
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
   const { filename, contentType, fileSize } = req.body || {}
 
-  if (!contentType || !fileSize || !ALLOWED_VIDEO_TYPES.has(contentType)) {
+  if (!contentType || !fileSize || !isVideoType(contentType)) {
     return res.status(400).json({ error: 'Paramètres manquants ou type non autorisé.' })
   }
 
